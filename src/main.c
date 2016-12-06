@@ -5,7 +5,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
 #include <unistd.h>
+
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 
 struct _conf
 {
@@ -31,16 +36,21 @@ int main(int argc, char *argv[])
     if(conf.daemonize) {
         daemon(0, 0);
     }
+    openlog(PACKAGE_NAME, LOG_CONS|LOG_PID, LOG_DAEMON);
 
     signal(SIGINT, killer);
 
     write_pid(&conf);
 
+    syslog(LOG_INFO, "starting");
     for(keep_running = 1; keep_running;) {
         /* check remote changes */
         /* check local changes */
         sleep(1);
     }
+
+    syslog(LOG_INFO, "stopping");
+    closelog();
 
     return 0;
 }
