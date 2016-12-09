@@ -76,7 +76,7 @@ POST_INSTALL = :
 NORMAL_UNINSTALL = :
 PRE_UNINSTALL = :
 POST_UNINSTALL = :
-bin_PROGRAMS = gdd$(EXEEXT)
+bin_PROGRAMS = drivefusesync$(EXEEXT)
 subdir = src
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(top_srcdir)/depcomp
@@ -90,9 +90,12 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
-am_gdd_OBJECTS = main.$(OBJEXT) gd-api.$(OBJEXT)
-gdd_OBJECTS = $(am_gdd_OBJECTS)
-gdd_DEPENDENCIES =
+am_drivefusesync_OBJECTS = main.$(OBJEXT) driveapi.$(OBJEXT) \
+	dbcache.$(OBJEXT) inotifyapi.$(OBJEXT) fuseapi.$(OBJEXT)
+drivefusesync_OBJECTS = $(am_drivefusesync_OBJECTS)
+am__DEPENDENCIES_1 =
+drivefusesync_DEPENDENCIES = $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -121,8 +124,8 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(gdd_SOURCES)
-DIST_SOURCES = $(gdd_SOURCES)
+SOURCES = $(drivefusesync_SOURCES)
+DIST_SOURCES = $(drivefusesync_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -168,6 +171,8 @@ ECHO_N = @ECHO_N@
 ECHO_T = @ECHO_T@
 EGREP = @EGREP@
 EXEEXT = @EXEEXT@
+FUSE_CFLAGS = @FUSE_CFLAGS@
+FUSE_LIBS = @FUSE_LIBS@
 GREP = @GREP@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
@@ -175,6 +180,8 @@ INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
 LDFLAGS = @LDFLAGS@
+LIBCURL_CFLAGS = @LIBCURL_CFLAGS@
+LIBCURL_LIBS = @LIBCURL_LIBS@
 LIBOBJS = @LIBOBJS@
 LIBS = @LIBS@
 LTLIBOBJS = @LTLIBOBJS@
@@ -189,8 +196,13 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
 PACKAGE_URL = @PACKAGE_URL@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
+PKG_CONFIG = @PKG_CONFIG@
+PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
+PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
+SQLITE3_CFLAGS = @SQLITE3_CFLAGS@
+SQLITE3_LIBS = @SQLITE3_LIBS@
 STRIP = @STRIP@
 VERSION = @VERSION@
 abs_builddir = @abs_builddir@
@@ -235,9 +247,9 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-AM_CFLAGS = -I$(top_srcdir)/include
-gdd_SOURCES = main.c gd-api.c
-gdd_LDADD = 
+AM_CFLAGS = -I$(top_srcdir)/include ${FUSE_CFLAGS} ${LIBCURL_CFLAGS} ${SQLITE3_CFLAGS}
+drivefusesync_SOURCES = main.c driveapi.c dbcache.c inotifyapi.c fuseapi.c
+drivefusesync_LDADD = ${FUSE_LIBS} ${LIBCURL_LIBS} ${SQLITE3_LIBS}
 all: all-am
 
 .SUFFIXES:
@@ -315,9 +327,9 @@ uninstall-binPROGRAMS:
 clean-binPROGRAMS:
 	-test -z "$(bin_PROGRAMS)" || rm -f $(bin_PROGRAMS)
 
-gdd$(EXEEXT): $(gdd_OBJECTS) $(gdd_DEPENDENCIES) $(EXTRA_gdd_DEPENDENCIES) 
-	@rm -f gdd$(EXEEXT)
-	$(AM_V_CCLD)$(LINK) $(gdd_OBJECTS) $(gdd_LDADD) $(LIBS)
+drivefusesync$(EXEEXT): $(drivefusesync_OBJECTS) $(drivefusesync_DEPENDENCIES) $(EXTRA_drivefusesync_DEPENDENCIES) 
+	@rm -f drivefusesync$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(drivefusesync_OBJECTS) $(drivefusesync_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -325,7 +337,10 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gd-api.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dbcache.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/driveapi.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fuseapi.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/inotifyapi.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/main.Po@am__quote@
 
 .c.o:

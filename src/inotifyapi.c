@@ -87,7 +87,7 @@ handle_events(int fd, int *wd, int argc, char* argv[])
 }
 
     int
-main(int argc, char* argv[])
+examplemain(int argc, char* argv[])
 {
     char buf;
     int fd, i, poll_num;

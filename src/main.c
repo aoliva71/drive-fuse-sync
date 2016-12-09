@@ -12,16 +12,22 @@
 #include "config.h"
 #endif
 
-#include "gd-api.h"
 #include "dbcache.h"
+#include "driveapi.h"
+#include "fuseapi.h"
+#include "inotifyapi.h"
 
 struct _conf
 {
     int daemonize;
-    char pidfile[PATH_MAX + 1];
+    char username[DRIVE_USER_MAX + 1];
+    char passwd[DRIVE_PASSWD_MAX + 1];
+    char basedir[PATH_MAX + 1];
     char mountpoint[PATH_MAX + 1];
-    char username[GD_USER_MAX + 1];
-    char passwdfile[PATH_MAX + 1];
+
+    
+    char pidfile[PATH_MAX + 1];
+    char dbfile[PATH_MAX + 1];
 };
 typedef struct _conf conf_t;
 
@@ -30,13 +36,11 @@ static void killer(int);
 
 static void set_defaults(conf_t *);
 static void parse_command_line(conf_t *, int, char *[]);
-static void write_pid(const conf_t *);
-static void readpasswd(const conf_t *, char *, size_t);
+static void write_pid(const char *);
 
 int main(int argc, char *argv[])
 {
     conf_t conf;
-    char passwd[GD_PASSWD_MAX + 1];
     
     set_defaults(&conf);
     parse_command_line(&conf, argc, argv);
@@ -48,19 +52,17 @@ int main(int argc, char *argv[])
 
     signal(SIGINT, killer);
 
-    write_pid(&conf);
+    write_pid(conf.pidfile);
 
     syslog(LOG_INFO, "starting");
 
-    dbcache_open("");
+    dbcache_open(conf.dbfile);
+    //dbcache_updatepasswd(conf.passwd, DRIVE_PASSWD_MAX);
 
-    memset(passwd, 0, (GD_PASSWD_MAX + 1) * sizeof(char));
-    readpasswd(&conf, passwd, GD_PASSWD_MAX);
-    gd_login(conf.username, passwd);
-    memset(passwd, 0, (GD_PASSWD_MAX + 1) * sizeof(char));
 
-    
-
+    drive_login(conf.username, conf.passwd);
+    /* forget passwd asap */
+    memset(conf.passwd, 0, (DRIVE_PASSWD_MAX + 1) * sizeof(char));
 
     for(keep_running = 1; keep_running;) {
         /* check remote changes */
@@ -68,7 +70,7 @@ int main(int argc, char *argv[])
         sleep(1);
     }
 
-    gd_logout();
+    drive_logout();
 
     dbcache_close();
 
@@ -93,23 +95,22 @@ static void set_defaults(conf_t *conf)
 {
     const char *home;
     memset(conf, 0, sizeof(conf_t));
-    strncpy(conf->pidfile, "/var/run/gdd.pid", PATH_MAX);
     home = getenv("HOME");
     if(home) {
-        snprintf(conf->passwdfile, PATH_MAX, "%s/.gdd/passwd", home);
+        snprintf(conf->basedir, PATH_MAX, "%s/.drivefusesync", home);
     }
 }
 
 static void parse_command_line(conf_t *conf, int argc, char *argv[])
 {
     int o;
-#define OPTS    "dpmUPh"
+#define OPTS    "dUPbmh"
     static struct option lopts[] = {
         {"daemonize", 0, NULL, 'd'},
-        {"pid-file", 1, NULL, 'p'},
-        {"mount-point", 1, NULL, 'm'},
         {"user-name", 1, NULL, 'U'},
         {"password-file", 1, NULL, 'P'},
+        {"base-dir", 1, NULL, 'b'},
+        {"mount-point", 1, NULL, 'm'},
         {"help", 0, NULL, 'h'},
         {0, 0, 0, 0}
     };
@@ -123,9 +124,19 @@ static void parse_command_line(conf_t *conf, int argc, char *argv[])
         case 'd':
             conf->daemonize = 1;
             break;
-        case 'p':
+        case 'U':
             if(optarg) {
-                strncpy(conf->pidfile, optarg, PATH_MAX);
+                strncpy(conf->username, optarg, DRIVE_USER_MAX);
+            }
+            break;
+        case 'P':
+            if(optarg) {
+                strncpy(conf->passwd, optarg, DRIVER_PASSWD_MAX);
+            }
+            break;
+        case 'b':
+            if(optarg) {
+                strncpy(conf->basedir, optarg, PATH_MAX);
             }
             break;
         case 'm':
@@ -133,47 +144,41 @@ static void parse_command_line(conf_t *conf, int argc, char *argv[])
                 strncpy(conf->mountpoint, optarg, PATH_MAX);
             }
             break;
-        case 'U':
-            if(optarg) {
-                strncpy(conf->username, optarg, GD_USER_MAX);
-            }
-            break;
-        case 'P':
-            if(optarg) {
-                strncpy(conf->passwdfile, optarg, PATH_MAX);
-            }
-            break;
         case 'h':
             printf("usage: %s "
                 "[-d|--daemonize] "
-                "[-p|--pid-file <PIDFILE>] "
+                "[-b|--base-dir <BASEDIR>] "
+                "[-m|--mount-point <MOUNTPOINT>] "
                 "-U|--user-name <USERNAME> "
-                "-P|--password-file <PASSWORDFILE> "
+                "[-P|--password <PASSWORD>] "
                 " | "
-                "-h|--help\n", argv[0]);
+                "-h|--help\n"
+                "\n"
+                "BASEDIR defaults to ${HOME}/.drivefusesync\n"
+                "USER is the drive user\n"
+                "PASSWORD will overwrite existing configuration (if any)\n"
+                "\n", argv[0]);
             exit(0);
         }
     }
+
+    if(0 == strlen(conf->username)) {
+        fprintf(stderr, "no username provided\n");
+        exit(1);
+    }
+    snprintf(conf->pidfile, PATH_MAX, "%s/%s.pid", conf->basedir, conf->username);
+    snprintf(conf->dbfile, PATH_MAX, "%s/%s.db", conf->basedir, conf->username);
 }
 
-static void write_pid(const conf_t *conf)
+static void write_pid(const char *pidfile)
 {
     pid_t pid;
     FILE *f;
 
     pid = getpid();
-    f = fopen(conf->pidfile, "w");
+    f = fopen(pidfile, "w");
     if(f) {
         fprintf(f, "%d", (int)pid);
-        fclose(f);
-    }
-}
-static void readpasswd(const conf_t *conf, char *passwd, size_t len)
-{
-    FILE *f;
-    f = fopen(conf->passwdfile, "r");
-    if(f) {
-        fread(passwd, sizeof(char), len, f);
         fclose(f);
     }
 }
