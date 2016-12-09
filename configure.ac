@@ -13,6 +13,7 @@ AM_INIT_AUTOMAKE
 AC_PROG_CC
 
 # Checks for libraries.
+PKG_CHECK_MODULES(fuse, sqlite3, libcurl)
 
 # Checks for header files.
 AC_CHECK_HEADERS([stdlib.h string.h unistd.h])

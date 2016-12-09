@@ -90,7 +90,7 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
-am_gdd_OBJECTS = main.$(OBJEXT)
+am_gdd_OBJECTS = main.$(OBJEXT) gd-api.$(OBJEXT)
 gdd_OBJECTS = $(am_gdd_OBJECTS)
 gdd_DEPENDENCIES =
 AM_V_P = $(am__v_P_@AM_V@)
@@ -236,7 +236,7 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AM_CFLAGS = -I$(top_srcdir)/include
-gdd_SOURCES = main.c
+gdd_SOURCES = main.c gd-api.c
 gdd_LDADD = 
 all: all-am
 
@@ -325,6 +325,7 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gd-api.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/main.Po@am__quote@
 
 .c.o:
