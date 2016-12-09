@@ -7,6 +7,8 @@
 #include <string.h>
 #include <syslog.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -48,6 +50,7 @@ int main(int argc, char *argv[])
     if(conf.daemonize) {
         daemon(0, 0);
     }
+    mkdir(conf.basedir, (mode_t)0700);
     openlog(PACKAGE_NAME, LOG_CONS|LOG_PID, LOG_DAEMON);
 
     signal(SIGINT, killer);
@@ -57,7 +60,7 @@ int main(int argc, char *argv[])
     syslog(LOG_INFO, "starting");
 
     dbcache_open(conf.dbfile);
-    //dbcache_updatepasswd(conf.passwd, DRIVE_PASSWD_MAX);
+    dbcache_updatepasswd(conf.passwd, DRIVE_PASSWD_MAX);
 
 
     drive_login(conf.username, conf.passwd);
@@ -104,7 +107,7 @@ static void set_defaults(conf_t *conf)
 static void parse_command_line(conf_t *conf, int argc, char *argv[])
 {
     int o;
-#define OPTS    "dUPbmh"
+#define OPTS    "dU:P:b:m:h"
     static struct option lopts[] = {
         {"daemonize", 0, NULL, 'd'},
         {"user-name", 1, NULL, 'U'},
@@ -131,7 +134,7 @@ static void parse_command_line(conf_t *conf, int argc, char *argv[])
             break;
         case 'P':
             if(optarg) {
-                strncpy(conf->passwd, optarg, DRIVER_PASSWD_MAX);
+                strncpy(conf->passwd, optarg, DRIVE_PASSWD_MAX);
             }
             break;
         case 'b':
