@@ -80,12 +80,14 @@ int dbcache_updatepasswd(char *passwd, size_t len)
     if(SQLITE_ROW == rc) {
         /* read */
         pfound = sqlite3_column_text(sel, 0);
-        strncpy(passwd, pfound, len);
+        strncpy(passwd, (char *)pfound, len);
     } else {
         syslog(LOG_ERR, "unable to read password");
         exit(1);
     }
     sqlite3_finalize(sel);
+
+    return 0;
 }
 
 static void create_schema(void)
@@ -124,6 +126,7 @@ static void create_schema(void)
             "uuid TEXT NOT NULL PRIMARY KEY, "
             "name TEXT NOT NULL, "
             "type INTEGER NOT NULL, "
+            "size INTEGER NOT NULL, "
             "attr INTEGER NOT NULL, "
             "sync INTEGER NOT NULL, "
             "checksum TEXT NOT NULL, "
@@ -133,5 +136,20 @@ static void create_schema(void)
             ")", NULL, NULL, NULL);
     sqlite3_exec(sql, "CREATE INDEX IF NOT EXISTS dfs_entity_name ON "
             "dfs_entity ( name )", NULL, NULL, NULL);
+
+    sqlite3_prepare_v2(sql, "SELECT uuid FROM dfs_entity WHERE parent IS NULL",
+            -1, &sel, NULL);
+    rc = sqlite3_step(sel);
+    if(SQLITE_DONE == rc) {
+        rc = sqlite3_prepare_v2(sql, "INSERT INTO dfs_entity ( uuid, name, "
+            "type, size, attr, sync, checksum ) VALUES ( "
+            "'00000000-0000-0000-0000-000000000000', 'root', 1, 0, 448, 1, 0)",
+            -1, &ins, NULL);
+        rc = sqlite3_bind_int(ins, 1, schemaversion);
+        rc = sqlite3_step(ins);
+        sqlite3_finalize(ins);
+    }
+    sqlite3_finalize(sel);
+
 }
 

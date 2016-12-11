@@ -3,6 +3,8 @@
 
 int drive_login(const char *un, const char *passwd)
 {
+    (void)un;
+    (void)passwd;
     return 0;
 }
 
