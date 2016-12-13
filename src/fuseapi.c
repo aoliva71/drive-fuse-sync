@@ -18,23 +18,18 @@ static const char *fuseapi_name = "hello";
 
 static int fuseapi_stat(fuse_ino_t ino, struct stat *stbuf)
 {
-	stbuf->st_ino = ino;
-	switch (ino) {
-	case 1:
-		stbuf->st_mode = S_IFDIR | 0755;
-		stbuf->st_nlink = 2;
-		break;
+    size_t *size;
+    mode_t *mode;
+    int rc;
 
-	case 2:
-		stbuf->st_mode = S_IFREG | 0444;
-		stbuf->st_nlink = 1;
-		stbuf->st_size = strlen(fuseapi_str);
-		break;
-
-	default:
-		return -1;
-	}
-	return 0;
+    rc = dbcache_find(ino, NULL, 0, NULL, 0, &size, &mode);
+    if(0 == rc) {
+    	stbuf->st_ino = ino;
+        stbuf->st_mode = mode;
+        stbuf->nlink = 1;
+        stbuf->size = size;
+    }
+    return rc;
 }
 
 static void fuseapi_getattr(fuse_req_t req, fuse_ino_t ino,
@@ -53,19 +48,13 @@ static void fuseapi_getattr(fuse_req_t req, fuse_ino_t ino,
 
 static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
 {
-	struct fuse_entry_param e;
-
-	if (parent != 1 || strcmp(name, fuseapi_name) != 0)
+    int rc;
+#define LOOKUP  1
+    rc = dbcache_browse(parent, req, LOOKUP);
+#undef LOOKUP
+    if(rc != 0) {
 		fuse_reply_err(req, ENOENT);
-	else {
-		memset(&e, 0, sizeof(e));
-		e.ino = 2;
-		e.attr_timeout = 1.0;
-		e.entry_timeout = 1.0;
-		fuseapi_stat(e.ino, &e.attr);
-
-		fuse_reply_entry(req, &e);
-	}
+    }
 }
 
 struct dirbuf {
@@ -101,6 +90,15 @@ static int reply_buf_limited(fuse_req_t req, const char *buf, size_t bufsize,
 static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
 			     off_t off, struct fuse_file_info *fi)
 {
+    int rc;
+    
+#define READDIR 2
+    rc = dbcache_browse(ino, req, READDIR);
+#undef READDIR
+    if(rc != 0) {
+		fuse_reply_err(req, ENOTDIR);
+    }
+    
 	(void) fi;
 
 	if (ino != 1)
