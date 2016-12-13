@@ -51,6 +51,7 @@ int main(int argc, char *argv[])
         daemon(0, 0);
     }
     mkdir(conf.basedir, (mode_t)0700);
+    mkdir(conf.mountpoint, (mode_t)0700);
     openlog(PACKAGE_NAME, LOG_CONS|LOG_PID, LOG_DAEMON);
 
     signal(SIGINT, killer);
@@ -62,9 +63,24 @@ int main(int argc, char *argv[])
     dbcache_open(conf.dbfile);
     dbcache_updatepasswd(conf.passwd, DRIVE_PASSWD_MAX);
 
+    dbcache_createdir("0000000a-000a-000a-000a-00000000000a",
+        "a", 0755, 1, "a========", "00000000-0000-0000-0000-000000000000");
+    dbcache_createdir("000000aa-00aa-00aa-00aa-0000000000aa",
+        "aa", 0755, 1, "aa=======", "0000000a-000a-000a-000a-00000000000a");
+    dbcache_createdir("000000ab-00ab-00ab-00ab-0000000000ab",
+        "ab", 0755, 1, "ab=======", "0000000a-000a-000a-000a-00000000000a");
+    dbcache_createdir("000000ac-00ac-00ac-00ac-0000000000ac",
+        "ac", 0755, 1, "ac=======", "0000000a-000a-000a-000a-00000000000a");
+    dbcache_createdir("0000000b-000b-000b-000b-00000000000b",
+        "b", 0755, 1, "b========", "00000000-0000-0000-0000-000000000000");
+    dbcache_createdir("0000000c-000c-000c-000c-00000000000c",
+        "c", 0755, 1, "c========", "00000000-0000-0000-0000-000000000000");
+
+    fuse_start(conf.mountpoint);
+    
 
     drive_login(conf.username, conf.passwd);
-    /* forget passwd asap */
+    /* forget passwd immediately */
     memset(conf.passwd, 0, (DRIVE_PASSWD_MAX + 1) * sizeof(char));
 
     for(keep_running = 1; keep_running;) {
@@ -74,6 +90,8 @@ int main(int argc, char *argv[])
     }
 
     drive_logout();
+
+    fuse_stop();
 
     dbcache_close();
 
@@ -101,6 +119,7 @@ static void set_defaults(conf_t *conf)
     home = getenv("HOME");
     if(home) {
         snprintf(conf->basedir, PATH_MAX, "%s/.drivefusesync", home);
+        snprintf(conf->mountpoint, PATH_MAX, "%s/drive", home);
     }
 }
 
