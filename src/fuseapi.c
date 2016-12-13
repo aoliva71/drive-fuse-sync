@@ -167,10 +167,10 @@ int fuse_start(const char *mountpoint)
 int fuse_stop(void)
 {
     fuse_session_exit(fapi_fs);
-    pthread_join(fapi_ft, NULL);
     fuse_session_remove_chan(fapi_ch);
     fuse_session_destroy(fapi_fs);
     fuse_unmount(fapi_mountpoint, fapi_ch);
+    pthread_join(fapi_ft, NULL);
 }
 
 static void *fuseapi_thread(void *raw)
