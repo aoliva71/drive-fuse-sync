@@ -21,8 +21,9 @@ static sqlite3 *sql = NULL;
 static sqlite3_stmt *insertentity = NULL;
 static sqlite3_stmt *renameentity = NULL;
 static sqlite3_stmt *deleteentity = NULL;
-static sqlite3_stmt *selectentity = NULL;
-static sqlite3_stmt *selectchildren = NULL;
+static sqlite3_stmt *pinpoint = NULL;
+static sqlite3_stmt *lookup = NULL;
+static sqlite3_stmt *browse = NULL;
 static int schemaversion = -1;
 
 static void setup(void);
@@ -152,69 +153,103 @@ int dbcache_createfile(int64_t *id, const char *uuid, const char *name, size_t s
     return rc;
 }
 
-int dbcache_find(int64_t id, char *uuid, size_t ulen, char *name, size_t nlen,
-        size_t *size, mode_t *mode)
+int dbcache_pinpoint(int64_t id, dbcache_cb_t *cb)
 {
     int rc;
-    const unsigned char *u;
-    const unsigned char *n;
-    int64_t s;
-    int m;
-
-    rc = sqlite3_reset(selectentity);
-    rc = sqlite3_bind_int64(selectentity, 1, id);
-    rc = sqlite3_step(selectentity);
+    const char *uuid;
+    const char *name;
+    int type;
+    size_t size;
+    mode_t mode;
+    int sync;
+    const char *checksum;
+    int64_t parent;
+ 
+    rc = sqlite3_reset(pinpoint);
+    rc = sqlite3_bind_int64(pinpoint, 1, id);
+    rc = sqlite3_step(pinpoint);
     if(rc != SQLITE_ROW) {
         return -1;
     }
-    u = sqlite3_column_text(selectentity, 0);
-    n = sqlite3_column_text(selectentity, 1);
-    s = sqlite3_column_int64(selectentity, 2);
-    m = sqlite3_column_int(selectentity, 3);
-    strncpy(uuid, u, ulen);
-    strncpy(name, n, nlen);
-    *size = (size_t)s;
-    *mode = (mode_t)m;
-    return 0;
+    
+    uuid = sqlite3_column_text(pinpoint, 0);
+    name = sqlite3_column_text(pinpoint, 1);
+    type = sqlite3_column_int(pinpoint, 2);
+    size = sqlite3_column_int64(pinpoint, 3);
+    mode = sqlite3_column_int(pinpoint, 4);
+    sync = sqlite3_column_int(pinpoint, 5);
+    checksum = sqlite3_column_text(pinpoint, 6);
+    parent = sqlite3_column_int64(pinpoint, 7);
+
+    rc = cb(id, uuid, name, type, size, mode, sync, checksum, parent);
+
+    return rc;
+}
+
+int dbcache_lookup(const char *name, int64_t parent, dbcache_cb_t *cb)
+{
+    int rc;
+    int64_t id;
+    const char *uuid;
+    int type;
+    size_t size;
+    mode_t mode;
+    int sync;
+    const char *checksum;
+ 
+    rc = sqlite3_reset(lookup);
+    rc = sqlite3_bind_text(lookup, 1, name, -1, NULL);
+    rc = sqlite3_bind_int64(lookup, 2, parent);
+    rc = sqlite3_step(lookup);
+    if(rc != SQLITE_ROW) {
+        return -1;
+    }
+    
+    id = sqlite3_column_int64(lookup, 0);
+    uuid = sqlite3_column_text(lookup, 1);
+    type = sqlite3_column_int(lookup, 2);
+    size = sqlite3_column_int64(lookup, 3);
+    mode = sqlite3_column_int(lookup, 4);
+    sync = sqlite3_column_int(lookup, 5);
+    checksum = sqlite3_column_text(lookup, 6);
+
+    rc = cb(id, uuid, name, type, size, mode, sync, checksum, parent);
+
+    return rc;
 }
 
 
-int dbcache_browse(int64_t parent, void *req, int what)
+int dbcache_browse(int64_t parent, dbcache_cb_t *cb)
 {
-    /*typedef int (*fuse_fill_dir_t)(void *, const char *, const struct stat *,
-        off_t);*/
-    struct fuse_entry_param e;
-    struct dirbuf b;
-    int64_t cid;
-    size_t s;
-    mode_t m;
     int rc;
+    int64_t id;
+    const char *uuid;
+    const char *name;
+    int type;
+    size_t size;
+    mode_t mode;
+    int sync;
+    const char *checksum;
 
-    rc = sqlite3_reset(selectchildren);
-    rc = sqlite3_bind_int64(selectchildren, 1, parent);
-    rc = sqlite3_step(renameentity);
-    while(SQLITE_ROW == rc) {
-        cid = sqlite3_column_int64(selectchildren, 0);
-        s = sqlite3_column_int64(selectchildren, 4);
-        m = sqlite3_column_int(selectchildren, 5);
+    rc = sqlite3_reset(browse);
+    rc = sqlite3_bind_int64(browse, 1, parent);
+    for(;;) {
+        rc = sqlite3_step(browse);
+        if(SQLITE_ROW == rc) {
+            id = sqlite3_column_int64(pinpoint, 0);
+            uuid = sqlite3_column_text(pinpoint, 1);
+            name = sqlite3_column_text(pinpoint, 2);
+            type = sqlite3_column_int(pinpoint, 3);
+            size = sqlite3_column_int64(pinpoint, 4);
+            mode = sqlite3_column_int(pinpoint, 5);
+            sync = sqlite3_column_int(pinpoint, 6);
+            checksum = sqlite3_column_text(pinpoint, 7);
 
-        switch(what) {
-        case LOOKUP:
-            memset(&e, 0, sizeof(struct fuse_entry_param));
-            e.ino = cid;
-            e.attr_timeout = 1.0;
-            e.entry_timeout = 1.0;
-            e.attr.st_ino = cid;
-            e.attr.st_mode = m;
-            e.attr.nlink = 1;
-            e.attr.size = s;
-
-            fuse_reply_entry((fuse_req_t)req, &e);
-            break;
-        case READDIR:
-            break;
+            rc = cb(id, uuid, name, type, size, mode, sync, checksum, parent);
+            if(rc != 0) {
+                return -1;
+            }
         }
-
     }
 
     return 0;
@@ -291,7 +326,7 @@ static void setup(void)
             "name TEXT NOT NULL, "
             "type INTEGER NOT NULL, "
             "size INTEGER NOT NULL, "
-            "attr INTEGER NOT NULL, "
+            "mode INTEGER NOT NULL, "
             "sync INTEGER NOT NULL, "
             "checksum TEXT NOT NULL, "
             "parent INTEGER, "
@@ -306,7 +341,7 @@ static void setup(void)
     rc = sqlite3_step(sel);
     if(SQLITE_DONE == rc) {
         rc = sqlite3_prepare_v2(sql, "INSERT INTO dfs_entity ( uuid, name, "
-            "type, size, attr, sync, checksum ) VALUES ( "
+            "type, size, mode, sync, checksum ) VALUES ( "
             "'00000000-0000-0000-0000-000000000000', 'root', 1, 0, 448, 1, 0)",
             -1, &ins, NULL);
         rc = sqlite3_bind_int(ins, 1, schemaversion);
@@ -316,7 +351,7 @@ static void setup(void)
     sqlite3_finalize(sel);
 
     sqlite3_prepare_v2(sql, "INSERT INTO dfs_entity ( uuid, name, "
-        "type, size, attr, sync, checksum, parent ) VALUES ( "
+        "type, size, mode, sync, checksum, parent ) VALUES ( "
         "?, ?, ?, ?, ?, ?, ?, ?)",
         -1, &insertentity, NULL);
 
@@ -326,16 +361,21 @@ static void setup(void)
     sqlite3_prepare_v2(sql, "DELETE FROM dfs_entity WHERE id = ? ",
         -1, &deleteentity, NULL);
 
-    sqlite3_prepare_v2(sql, "SELECT uuid, name, type, size, attr, sync, "
-        "checksum "
-        "FROM dfs_entity WHERE id = ?", -1, &selectentity,
+    sqlite3_prepare_v2(sql, "SELECT uuid, name, type, size, mode, sync, "
+        "checksum, parent "
+        "FROM dfs_entity WHERE id = ?", -1, &pinpoint,
         NULL);
 
-    sqlite3_prepare_v2(sql, "SELECT id, uuid, name, type, size, attr, sync, "
+    sqlite3_prepare_v2(sql, "SELECT id, uuid, type, size, mode, sync, "
+        "checksum "
+        "FROM dfs_entity WHERE name = ? AND parent = ?", -1, &lookup,
+        NULL);
+
+    sqlite3_prepare_v2(sql, "SELECT id, uuid, name, type, size, mode, sync, "
         "checksum "
         "FROM dfs_entity "
         "WHERE parent = ?",
-        -1, &selectchildren, NULL);
+        -1, &browse, NULL);
 }
 
 

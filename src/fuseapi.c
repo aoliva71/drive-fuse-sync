@@ -18,121 +18,140 @@ static const char *fuseapi_name = "hello";
 
 static int fuseapi_stat(fuse_ino_t ino, struct stat *stbuf)
 {
-    size_t *size;
-    mode_t *mode;
     int rc;
 
-    rc = dbcache_find(ino, NULL, 0, NULL, 0, &size, &mode);
-    if(0 == rc) {
-    	stbuf->st_ino = ino;
+    int statcb(int64_t id, const char *uuid, const char *name, int type,
+            size_t size, mode_t mode, int sync, const char *checksum,
+            int64_t parent) {
+        stbuf->st_ino = id;
         stbuf->st_mode = mode;
-        stbuf->nlink = 1;
-        stbuf->size = size;
+        stbuf->st_nlink = 1;
+        stbuf->st_size = size;
     }
+
+    rc = dbcache_pinpoint(ino, statcb);
+
     return rc;
 }
 
 static void fuseapi_getattr(fuse_req_t req, fuse_ino_t ino,
-			     struct fuse_file_info *fi)
+                 struct fuse_file_info *fi)
 {
-	struct stat stbuf;
+    struct stat stbuf;
 
-	(void) fi;
+    (void)fi;
 
-	memset(&stbuf, 0, sizeof(stbuf));
-	if (fuseapi_stat(ino, &stbuf) == -1)
-		fuse_reply_err(req, ENOENT);
-	else
-		fuse_reply_attr(req, &stbuf, 1.0);
+    memset(&stbuf, 0, sizeof(stbuf));
+    if (fuseapi_stat(ino, &stbuf) == -1) {
+        fuse_reply_err(req, ENOENT);
+    } else {
+        fuse_reply_attr(req, &stbuf, 1.0);
+    }
 }
 
 static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
 {
     int rc;
-#define LOOKUP  1
-    rc = dbcache_browse(parent, req, LOOKUP);
-#undef LOOKUP
+    struct fuse_entry_param e;
+
+    int lookupcb(int64_t id, const char *uuid, const char *name, int type,
+            size_t size, mode_t mode, int sync, const char *checksum,
+            int64_t parent) {
+        e.ino = id;
+        e.attr_timeout = 1.0;
+        e.entry_timeout = 1.0;
+        e.attr.st_ino = id;
+        e.attr.st_mode = mode;
+        e.attr.st_nlink = 1;
+        e.attr.st_size = size;
+
+        fuse_reply_entry(req, &e);
+    }
+
+    memset(&e, 0, sizeof(struct fuse_entry_param));
+    rc = dbcache_lookup(name, parent, lookupcb);
     if(rc != 0) {
-		fuse_reply_err(req, ENOENT);
+        fuse_reply_err(req, ENOENT);
     }
 }
 
 struct dirbuf {
-	char *p;
-	size_t size;
+    char *p;
+    size_t size;
 };
 
 static void dirbuf_add(fuse_req_t req, struct dirbuf *b, const char *name,
-		       fuse_ino_t ino)
+               fuse_ino_t ino)
 {
-	struct stat stbuf;
-	size_t oldsize = b->size;
-	b->size += fuse_add_direntry(req, NULL, 0, name, NULL, 0);
-	b->p = (char *) realloc(b->p, b->size);
-	memset(&stbuf, 0, sizeof(stbuf));
-	stbuf.st_ino = ino;
-	fuse_add_direntry(req, b->p + oldsize, b->size - oldsize, name, &stbuf,
-			  b->size);
+    struct stat stbuf;
+    size_t oldsize = b->size;
+    b->size += fuse_add_direntry(req, NULL, 0, name, NULL, 0);
+    b->p = (char *) realloc(b->p, b->size);
+    memset(&stbuf, 0, sizeof(stbuf));
+    stbuf.st_ino = ino;
+    fuse_add_direntry(req, b->p + oldsize, b->size - oldsize, name, &stbuf,
+              b->size);
 }
 
 #define min(x, y) ((x) < (y) ? (x) : (y))
 
 static int reply_buf_limited(fuse_req_t req, const char *buf, size_t bufsize,
-			     off_t off, size_t maxsize)
+                 off_t off, size_t maxsize)
 {
-	if (off < bufsize)
-		return fuse_reply_buf(req, buf + off,
-				      min(bufsize - off, maxsize));
-	else
-		return fuse_reply_buf(req, NULL, 0);
+    if (off < bufsize)
+        return fuse_reply_buf(req, buf + off,
+                      min(bufsize - off, maxsize));
+    else
+        return fuse_reply_buf(req, NULL, 0);
 }
 
-static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
-			     off_t off, struct fuse_file_info *fi)
+static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
+                 off_t off, struct fuse_file_info *fi)
 {
     int rc;
-    
-#define READDIR 2
-    rc = dbcache_browse(ino, req, READDIR);
-#undef READDIR
-    if(rc != 0) {
-		fuse_reply_err(req, ENOTDIR);
+    int trivial;
+    struct dirbuf b;
+
+    (void)fi;
+
+    int browsecb(int64_t id, const char *uuid, const char *name, int type,
+            size_t size, mode_t mode, int sync, const char *checksum,
+            int64_t parent) {
+        memset(&b, 0, sizeof(struct dirbuf));
+        if(trivial) {
+            dirbuf_add(req, &b, ".", 1);
+            dirbuf_add(req, &b, "..", 1);
+        }
+        dirbuf_add(req, &b, name, id);
+        reply_buf_limited(req, b.p, b.size, off, sz);
+        free(b.p);
     }
-    
-	(void) fi;
-
-	if (ino != 1)
-		fuse_reply_err(req, ENOTDIR);
-	else {
-		struct dirbuf b;
-
-		memset(&b, 0, sizeof(b));
-		dirbuf_add(req, &b, ".", 1);
-		dirbuf_add(req, &b, "..", 1);
-		dirbuf_add(req, &b, fuseapi_name, 2);
-		reply_buf_limited(req, b.p, b.size, off, size);
-		free(b.p);
-	}
+   
+    trivial = 1;
+    rc = dbcache_browse(ino, browsecb);
+    if(rc != 0) {
+        fuse_reply_err(req, ENOTDIR);
+    }
 }
 
 static void fuseapi_open(fuse_req_t req, fuse_ino_t ino,
-			  struct fuse_file_info *fi)
+              struct fuse_file_info *fi)
 {
-	if (ino != 2)
-		fuse_reply_err(req, EISDIR);
-	else if ((fi->flags & 3) != O_RDONLY)
-		fuse_reply_err(req, EACCES);
-	else
-		fuse_reply_open(req, fi);
+    if (ino != 2)
+        fuse_reply_err(req, EISDIR);
+    else if ((fi->flags & 3) != O_RDONLY)
+        fuse_reply_err(req, EACCES);
+    else
+        fuse_reply_open(req, fi);
 }
 
 static void fuseapi_read(fuse_req_t req, fuse_ino_t ino, size_t size,
-			  off_t off, struct fuse_file_info *fi)
+              off_t off, struct fuse_file_info *fi)
 {
-	(void) fi;
+    (void) fi;
 
-	assert(ino == 2);
-	reply_buf_limited(req, fuseapi_str, strlen(fuseapi_str), off, size);
+    assert(ino == 2);
+    reply_buf_limited(req, fuseapi_str, strlen(fuseapi_str), off, size);
 }
 
 static struct fuse_lowlevel_ops fapi_ll_ops = {
