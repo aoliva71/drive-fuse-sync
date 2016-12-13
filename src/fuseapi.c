@@ -147,7 +147,7 @@ static struct fuse_lowlevel_ops fapi_ll_ops = {
 
 static pthread_t fapi_ft;
 static char fapi_mountpoint[PATH_MAX + 1];
-static const char **fapi_argv = {"-f", "-ofsname=drive", NULL};
+static char *fapi_argv[] = {"-f", "-ofsname=drive", NULL};
 struct fuse_args fapi_args = FUSE_ARGS_INIT(2, fapi_argv);
 static struct fuse_chan *fapi_ch = NULL;
 static struct fuse_session *fapi_fs = NULL;
@@ -158,7 +158,7 @@ int fuse_start(const char *mountpoint)
     memset(fapi_mountpoint, 0, (PATH_MAX + 1) * sizeof(char));
     strncpy(fapi_mountpoint, mountpoint, PATH_MAX);
     fapi_ch = fuse_mount(mountpoint, &fapi_args);
-    fapi_fs = fuse_lowlevel_new(fapi_args, &fapi_ll_ops,
+    fapi_fs = fuse_lowlevel_new(&fapi_args, &fapi_ll_ops,
             sizeof(struct fuse_lowlevel_ops), NULL);
     fuse_session_add_chan(fapi_fs, fapi_ch);
     pthread_create(&fapi_ft, NULL, fuseapi_thread, NULL);
