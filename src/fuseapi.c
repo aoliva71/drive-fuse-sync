@@ -26,7 +26,6 @@ static int fuseapi_stat(fuse_ino_t ino, struct stat *stbuf)
     int statcb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, int sync, const char *checksum,
             int64_t parent) {
-        LOG("fuseapi_stat: %lld, %s", id, name);
         stbuf->st_ino = id;
         stbuf->st_mode = mode;
         switch(type) {
@@ -48,17 +47,19 @@ static int fuseapi_stat(fuse_ino_t ino, struct stat *stbuf)
 }
 
 static void fuseapi_getattr(fuse_req_t req, fuse_ino_t ino,
-                 struct fuse_file_info *fi)
+        struct fuse_file_info *fi)
 {
+    int rc;
     struct stat stbuf;
 
     (void)fi;
 
     memset(&stbuf, 0, sizeof(stbuf));
-    if (fuseapi_stat(ino, &stbuf) == -1) {
-        fuse_reply_err(req, ENOENT);
-    } else {
+    rc = fuseapi_stat(ino, &stbuf);
+    if(0 == rc) {
         fuse_reply_attr(req, &stbuf, 1.0);
+    } else {
+        fuse_reply_err(req, ENOENT);
     }
 }
 
@@ -67,11 +68,9 @@ static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
     int rc;
     struct fuse_entry_param e;
 
-    LOG("fuseapi_lookup: enter");
     int lookupcb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, int sync, const char *checksum,
             int64_t parent) {
-        LOG("fuseapi_lookup: %lld, %s", id, name);
         e.ino = id;
         e.attr_timeout = 1.0;
         e.entry_timeout = 1.0;
@@ -80,17 +79,16 @@ static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
         e.attr.st_nlink = 1;
         e.attr.st_size = size;
 
-        fuse_reply_entry(req, &e);
-
         return 0;
     }
 
     memset(&e, 0, sizeof(struct fuse_entry_param));
     rc = dbcache_lookup(name, parent, lookupcb);
-    if(rc != 0) {
+    if(0 == rc) {
+        fuse_reply_entry(req, &e);
+    } else {
         fuse_reply_err(req, ENOENT);
     }
-    LOG("fuseapi_lookup: exit");
 }
 
 struct dirbuf {
@@ -123,35 +121,95 @@ static int reply_buf_limited(fuse_req_t req, const char *buf, size_t bufsize,
         return fuse_reply_buf(req, NULL, 0);
 }
 
+    /**
+     * Read directory
+     *
+     * Send a buffer filled using fuse_add_direntry(), with size not
+     * exceeding the requested size.  Send an empty buffer on end of
+     * stream.
+     *
+     * fi->fh will contain the value set by the opendir method, or
+     * will be undefined if the opendir method didn't set any value.
+     *
+     * Valid replies:
+     *   fuse_reply_buf
+     *   fuse_reply_data
+     *   fuse_reply_err
+     *
+     * @param req request handle
+     * @param ino the inode number
+     * @param size maximum number of bytes to send
+     * @param off offset to continue reading the directory stream
+     * @param fi file information
+
+    fill up
+        fuse_add_direntry
+
+    when full
+        fuse_reply_buf
+
+    to mark the end
+        fuse_reply_buf(req, NULL, 0);
+     */
+
 static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
                  off_t off, struct fuse_file_info *fi)
 {
     int rc;
-    int trivial;
-    struct dirbuf b;
+    uint8_t buf[4096];
+    struct stat st;
+    size_t blen;
+    size_t len;
 
     LOG("fuseapi_readdir: enter");
     (void)fi;
+
+    if(sz > 4096) {
+        sz = 4096;
+    }
+
+    len = blen = 0;
 
     int browsecb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, int sync, const char *checksum,
             int64_t parent) {
         LOG("fuseapi_readdir: %lld, %s", id, name);
-        memset(&b, 0, sizeof(struct dirbuf));
-        if(trivial) {
-            dirbuf_add(req, &b, ".", 1);
-            dirbuf_add(req, &b, "..", 1);
+        memset(buf, 0, 4096 * sizeof(uint8_t));
+        if(0 == off) {
+            memset(&st, 0, sizeof(struct stat));
+            blen = fuse_add_direntry(req, buf, sz, ".", &st, 1);
+            len += blen;
+            sz -= blen;
+            blen = fuse_add_direntry(req, buf + blen, sz, "..", &st, 1);
+            len += blen;
+            sz -= blen;
         }
-        dirbuf_add(req, &b, name, id);
-        reply_buf_limited(req, b.p, b.size, off, sz);
-        free(b.p);
+
+        memset(&st, 0, sizeof(struct stat));
+        st.st_ino = id;
+        st.st_mode = mode;
+        switch(type) {
+        case 1:
+            st.st_mode |= S_IFDIR;
+            break;
+        case 2:
+            st.st_mode |= S_IFREG;
+            break;
+        }
+        st.st_nlink = 1;
+        st.st_size = size;
+
+        blen = fuse_add_direntry(req, buf + blen, sz, name, &st, id);
+        len += blen;
+        fuse_reply_buf(req, buf, len);
 
         return 0;
     }
    
-    trivial = 1;
-    rc = dbcache_browse(ino, browsecb);
-    if(rc != 0) {
+    rc = dbcache_browse(ino, off, browsecb);
+    if(0 == rc) {
+        fuse_reply_buf(req, NULL, 0);
+    } else {
         fuse_reply_err(req, ENOTDIR);
     }
     LOG("fuseapi_readdir: exit");

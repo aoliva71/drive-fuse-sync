@@ -222,7 +222,7 @@ int dbcache_lookup(const char *name, int64_t parent, dbcache_cb_t *cb)
 }
 
 
-int dbcache_browse(int64_t parent, dbcache_cb_t *cb)
+int dbcache_browse(int64_t parent, int64_t first, dbcache_cb_t *cb)
 {
     int rc;
     int64_t id;
@@ -236,6 +236,7 @@ int dbcache_browse(int64_t parent, dbcache_cb_t *cb)
 
     rc = sqlite3_reset(browse);
     rc = sqlite3_bind_int64(browse, 1, parent);
+    rc = sqlite3_bind_int64(browse, 2, first);
     for(;;) {
         rc = sqlite3_step(browse);
         if(SQLITE_ROW == rc) {
@@ -379,7 +380,8 @@ static void setup(void)
     sqlite3_prepare_v2(sql, "SELECT id, uuid, name, type, size, mode, sync, "
         "checksum "
         "FROM dfs_entity "
-        "WHERE parent = ?",
+        "WHERE parent = ? AND id > ? "
+        "ORDER BY id",
         -1, &browse, NULL);
 }
 

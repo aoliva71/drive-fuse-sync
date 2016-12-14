@@ -20,7 +20,7 @@ int dbcache_createfile(int64_t *, const char *, const char *, size_t, mode_t,
 
 int dbcache_pinpoint(int64_t, dbcache_cb_t *);
 int dbcache_lookup(const char *, int64_t, dbcache_cb_t *);
-int dbcache_browse(int64_t, dbcache_cb_t *);
+int dbcache_browse(int64_t, int64_t, dbcache_cb_t *);
 
 int dbcache_renameentry(int64_t, const char *);
 int dbcache_modifymode(int64_t, mode_t);
