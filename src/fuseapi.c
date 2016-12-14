@@ -7,6 +7,8 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
 
 #define FUSE_USE_VERSION 26
 #include <fuse_lowlevel.h>
@@ -19,9 +21,14 @@
 static const char *fuseapi_str = "Hello World!\n";
 static const char *fuseapi_name = "hello";
 
+static uid_t uid = 0;
+static gid_t gid = 0;
+
 static int fuseapi_stat(fuse_ino_t ino, struct stat *stbuf)
 {
     int rc;
+
+    LOG("fuseapi_stat: %lld", ino);
 
     int statcb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, int sync, const char *checksum,
@@ -37,7 +44,16 @@ static int fuseapi_stat(fuse_ino_t ino, struct stat *stbuf)
             break;
         }
         stbuf->st_nlink = 1;
-        stbuf->st_size = size;
+        stbuf->st_uid = uid;
+        stbuf->st_gid = gid;
+        switch(type) {
+        case 1:
+            stbuf->st_size = 4096;
+            break;
+        case 2:
+            stbuf->st_size = size;
+            break;
+        }
         return 0;
     }
 
@@ -52,6 +68,7 @@ static void fuseapi_getattr(fuse_req_t req, fuse_ino_t ino,
     int rc;
     struct stat stbuf;
 
+    LOG("fuseapi_getattr: %lld", ino);
     (void)fi;
 
     memset(&stbuf, 0, sizeof(stbuf));
@@ -68,6 +85,8 @@ static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
     int rc;
     struct fuse_entry_param e;
 
+    LOG("fuseapi_lookup: %s", name);
+
     int lookupcb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, int sync, const char *checksum,
             int64_t parent) {
@@ -76,8 +95,25 @@ static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
         e.entry_timeout = 1.0;
         e.attr.st_ino = id;
         e.attr.st_mode = mode;
+        switch(type) {
+        case 1:
+            e.attr.st_mode |= S_IFDIR;
+            break;
+        case 2:
+            e.attr.st_mode |= S_IFREG;
+            break;
+        }
         e.attr.st_nlink = 1;
-        e.attr.st_size = size;
+        e.attr.st_uid = uid;
+        e.attr.st_gid = gid;
+        switch(type) {
+        case 1:
+            e.attr.st_size = 4096;
+            break;
+        case 2:
+            e.attr.st_size = size;
+            break;
+        }
 
         return 0;
     }
@@ -91,67 +127,6 @@ static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
     }
 }
 
-struct dirbuf {
-    char *p;
-    size_t size;
-};
-
-static void dirbuf_add(fuse_req_t req, struct dirbuf *b, const char *name,
-               fuse_ino_t ino)
-{
-    struct stat stbuf;
-    size_t oldsize = b->size;
-    b->size += fuse_add_direntry(req, NULL, 0, name, NULL, 0);
-    b->p = (char *) realloc(b->p, b->size);
-    memset(&stbuf, 0, sizeof(stbuf));
-    stbuf.st_ino = ino;
-    fuse_add_direntry(req, b->p + oldsize, b->size - oldsize, name, &stbuf,
-              b->size);
-}
-
-#define min(x, y) ((x) < (y) ? (x) : (y))
-
-static int reply_buf_limited(fuse_req_t req, const char *buf, size_t bufsize,
-                 off_t off, size_t maxsize)
-{
-    if (off < bufsize)
-        return fuse_reply_buf(req, buf + off,
-                      min(bufsize - off, maxsize));
-    else
-        return fuse_reply_buf(req, NULL, 0);
-}
-
-    /**
-     * Read directory
-     *
-     * Send a buffer filled using fuse_add_direntry(), with size not
-     * exceeding the requested size.  Send an empty buffer on end of
-     * stream.
-     *
-     * fi->fh will contain the value set by the opendir method, or
-     * will be undefined if the opendir method didn't set any value.
-     *
-     * Valid replies:
-     *   fuse_reply_buf
-     *   fuse_reply_data
-     *   fuse_reply_err
-     *
-     * @param req request handle
-     * @param ino the inode number
-     * @param size maximum number of bytes to send
-     * @param off offset to continue reading the directory stream
-     * @param fi file information
-
-    fill up
-        fuse_add_direntry
-
-    when full
-        fuse_reply_buf
-
-    to mark the end
-        fuse_reply_buf(req, NULL, 0);
-     */
-
 static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
                  off_t off, struct fuse_file_info *fi)
 {
@@ -161,7 +136,7 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
     size_t blen;
     size_t len;
 
-    LOG("fuseapi_readdir: enter");
+    LOG("fuseapi_readdir - ino: %lld, size: %lld, off: %lld", ino, sz, off);
     (void)fi;
 
     if(sz > 4096) {
@@ -173,14 +148,17 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
     int browsecb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, int sync, const char *checksum,
             int64_t parent) {
-        LOG("fuseapi_readdir: %lld, %s", id, name);
         memset(buf, 0, 4096 * sizeof(uint8_t));
         if(0 == off) {
             memset(&st, 0, sizeof(struct stat));
+            st.st_mode = S_IFDIR|0x700;
+            st.st_nlink = 1;
+            st.st_uid = uid;
+            st.st_gid = gid;
             blen = fuse_add_direntry(req, buf, sz, ".", &st, 1);
             len += blen;
             sz -= blen;
-            blen = fuse_add_direntry(req, buf + blen, sz, "..", &st, 1);
+            blen = fuse_add_direntry(req, buf + len, sz, "..", &st, 1);
             len += blen;
             sz -= blen;
         }
@@ -197,9 +175,18 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
             break;
         }
         st.st_nlink = 1;
-        st.st_size = size;
+        st.st_uid = uid;
+        st.st_gid = gid;
+        switch(type) {
+        case 1:
+            st.st_size = 4096;
+            break;
+        case 2:
+            st.st_size = size;
+            break;
+        }
 
-        blen = fuse_add_direntry(req, buf + blen, sz, name, &st, id);
+        blen = fuse_add_direntry(req, buf + len, sz, name, &st, id);
         len += blen;
         fuse_reply_buf(req, buf, len);
 
@@ -212,12 +199,13 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
     } else {
         fuse_reply_err(req, ENOTDIR);
     }
-    LOG("fuseapi_readdir: exit");
 }
 
 static void fuseapi_open(fuse_req_t req, fuse_ino_t ino,
               struct fuse_file_info *fi)
 {
+    LOG("fuseapi_open: %lld", ino);
+
     /*if (ino != 2)
         fuse_reply_err(req, EISDIR);
     else if ((fi->flags & 3) != O_RDONLY)
@@ -232,8 +220,10 @@ static void fuseapi_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 {
     (void) fi;
 
+    LOG("fuseapi_read: %lld", ino);
+
     assert(ino == 2);
-    reply_buf_limited(req, fuseapi_str, strlen(fuseapi_str), off, size);
+    //reply_buf_limited(req, fuseapi_str, strlen(fuseapi_str), off, size);
 }
 
 static struct fuse_lowlevel_ops fapi_ll_ops = {
@@ -254,6 +244,8 @@ static void *fuseapi_thread(void *);
 
 int fuse_start(const char *mountpoint)
 {
+    uid = getuid();
+    gid = getgid();
     memset(fapi_mountpoint, 0, (PATH_MAX + 1) * sizeof(char));
     strncpy(fapi_mountpoint, mountpoint, PATH_MAX);
     fapi_ch = fuse_mount(fapi_mountpoint, &fapi_args);
