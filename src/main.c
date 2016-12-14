@@ -43,7 +43,7 @@ static void write_pid(const char *);
 int main(int argc, char *argv[])
 {
     conf_t conf;
-    int64_t id;
+    int64_t id, parent;
     
     set_defaults(&conf);
     parse_command_line(&conf, argc, argv);
@@ -64,18 +64,20 @@ int main(int argc, char *argv[])
     dbcache_open(conf.dbfile);
     dbcache_updatepasswd(conf.passwd, DRIVE_PASSWD_MAX);
 
-    dbcache_createdir(&id, "0000000a-000a-000a-000a-00000000000a",
-        "a", 0755, 1, "a========", "00000000-0000-0000-0000-000000000000");
+    /*
+    dbcache_createdir(&parent, "0000000a-000a-000a-000a-00000000000a",
+        "a", 0755, 1, "a========", 1);
     dbcache_createdir(&id, "000000aa-00aa-00aa-00aa-0000000000aa",
-        "aa", 0755, 1, "aa=======", "0000000a-000a-000a-000a-00000000000a");
+        "aa", 0755, 1, "aa=======", parent);
     dbcache_createdir(&id, "000000ab-00ab-00ab-00ab-0000000000ab",
-        "ab", 0755, 1, "ab=======", "0000000a-000a-000a-000a-00000000000a");
+        "ab", 0755, 1, "ab=======", parent);
     dbcache_createdir(&id, "000000ac-00ac-00ac-00ac-0000000000ac",
-        "ac", 0755, 1, "ac=======", "0000000a-000a-000a-000a-00000000000a");
+        "ac", 0755, 1, "ac=======", parent);
     dbcache_createdir(&id, "0000000b-000b-000b-000b-00000000000b",
-        "b", 0755, 1, "b========", "00000000-0000-0000-0000-000000000000");
+        "b", 0755, 1, "b========", 1);
     dbcache_createdir(&id, "0000000c-000c-000c-000c-00000000000c",
-        "c", 0755, 1, "c========", "00000000-0000-0000-0000-000000000000");
+        "c", 0755, 1, "c========", 1);
+    */
 
     fuse_start(conf.mountpoint);
     

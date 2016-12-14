@@ -14,9 +14,9 @@ int dbcache_close(void);
 int dbcache_updatepasswd(char *, size_t);
 
 int dbcache_createdir(int64_t *, const char *, const char *, mode_t, int,
-        const char *, const char *);
+        const char *, int64_t);
 int dbcache_createfile(int64_t *, const char *, const char *, size_t, mode_t,
-        int, const char *, const char *);
+        int, const char *, int64_t);
 
 int dbcache_pinpoint(int64_t, dbcache_cb_t *);
 int dbcache_lookup(const char *, int64_t, dbcache_cb_t *);

@@ -28,6 +28,9 @@ static int schemaversion = -1;
 
 static void setup(void);
 
+#include <stdarg.h>
+#define LOG(...) printf(__VA_ARGS__); printf("\n")
+
 int dbcache_open(const char *path)
 {
     int rc;
@@ -104,10 +107,10 @@ int dbcache_updatepasswd(char *passwd, size_t len)
 }
 
 int dbcache_createdir(int64_t *id, const char *uuid, const char *name, mode_t mode,
-        int sync, const char *checksum, const char *parent)
+        int sync, const char *checksum, int64_t parent)
 {
     int type;
-    int size;
+    size_t size;
     int rc;
     sqlite3_int64 lid;
     
@@ -117,11 +120,11 @@ int dbcache_createdir(int64_t *id, const char *uuid, const char *name, mode_t mo
     type = 1;
     rc = sqlite3_bind_int(insertentity, 3, type);
     size = 0;
-    rc = sqlite3_bind_int(insertentity, 4, size);
+    rc = sqlite3_bind_int64(insertentity, 4, size);
     rc = sqlite3_bind_int(insertentity, 5, mode);
     rc = sqlite3_bind_int(insertentity, 6, sync);
     rc = sqlite3_bind_text(insertentity, 7, checksum, -1, NULL);
-    rc = sqlite3_bind_text(insertentity, 8, parent, -1, NULL);
+    rc = sqlite3_bind_int64(insertentity, 8, parent);
     rc = sqlite3_step(insertentity);
 
     lid = sqlite3_last_insert_rowid(sql);
@@ -130,7 +133,7 @@ int dbcache_createdir(int64_t *id, const char *uuid, const char *name, mode_t mo
 }
 
 int dbcache_createfile(int64_t *id, const char *uuid, const char *name, size_t size,
-        mode_t mode, int sync, const char *checksum, const char *parent)
+        mode_t mode, int sync, const char *checksum, int64_t parent)
 {
     int type;
     int rc;
@@ -141,11 +144,11 @@ int dbcache_createfile(int64_t *id, const char *uuid, const char *name, size_t s
     rc = sqlite3_bind_text(insertentity, 2, name, -1, NULL);
     type = 2;
     rc = sqlite3_bind_int(insertentity, 3, type);
-    rc = sqlite3_bind_int(insertentity, 4, size);
+    rc = sqlite3_bind_int64(insertentity, 4, size);
     rc = sqlite3_bind_int(insertentity, 5, mode);
     rc = sqlite3_bind_int(insertentity, 6, sync);
     rc = sqlite3_bind_text(insertentity, 7, checksum, -1, NULL);
-    rc = sqlite3_bind_text(insertentity, 8, parent, -1, NULL);
+    rc = sqlite3_bind_int64(insertentity, 8, parent);
     rc = sqlite3_step(insertentity);
 
     lid = sqlite3_last_insert_rowid(sql);
@@ -236,19 +239,21 @@ int dbcache_browse(int64_t parent, dbcache_cb_t *cb)
     for(;;) {
         rc = sqlite3_step(browse);
         if(SQLITE_ROW == rc) {
-            id = sqlite3_column_int64(pinpoint, 0);
-            uuid = sqlite3_column_text(pinpoint, 1);
-            name = sqlite3_column_text(pinpoint, 2);
-            type = sqlite3_column_int(pinpoint, 3);
-            size = sqlite3_column_int64(pinpoint, 4);
-            mode = sqlite3_column_int(pinpoint, 5);
-            sync = sqlite3_column_int(pinpoint, 6);
-            checksum = sqlite3_column_text(pinpoint, 7);
+            id = sqlite3_column_int64(browse, 0);
+            uuid = sqlite3_column_text(browse, 1);
+            name = sqlite3_column_text(browse, 2);
+            type = sqlite3_column_int(browse, 3);
+            size = sqlite3_column_int64(browse, 4);
+            mode = sqlite3_column_int(browse, 5);
+            sync = sqlite3_column_int(browse, 6);
+            checksum = sqlite3_column_text(browse, 7);
 
             rc = cb(id, uuid, name, type, size, mode, sync, checksum, parent);
             if(rc != 0) {
                 return -1;
             }
+        } else {
+            break;
         }
     }
 
@@ -321,7 +326,7 @@ static void setup(void)
             "password TEXT NOT NULL )", NULL, NULL, NULL);
     
     sqlite3_exec(sql, "CREATE TABLE IF NOT EXISTS dfs_entity ( "
-            "id AUTOINCREMENT NOT NULL PRIMARY KEY, "
+            "id INTEGER NOT NULL PRIMARY KEY, "
             "uuid TEXT NOT NULL, "
             "name TEXT NOT NULL, "
             "type INTEGER NOT NULL, "
@@ -342,7 +347,7 @@ static void setup(void)
     if(SQLITE_DONE == rc) {
         rc = sqlite3_prepare_v2(sql, "INSERT INTO dfs_entity ( uuid, name, "
             "type, size, mode, sync, checksum ) VALUES ( "
-            "'00000000-0000-0000-0000-000000000000', 'root', 1, 0, 448, 1, 0)",
+            "'00000000-0000-0000-0000-000000000000', '/', 1, 0, 448, 1, 0)",
             -1, &ins, NULL);
         rc = sqlite3_bind_int(ins, 1, schemaversion);
         rc = sqlite3_step(ins);
@@ -377,5 +382,7 @@ static void setup(void)
         "WHERE parent = ?",
         -1, &browse, NULL);
 }
+
+#undef LOG
 
 
