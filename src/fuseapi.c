@@ -221,6 +221,19 @@ static void fuseapi_open(fuse_req_t req, fuse_ino_t ino,
     }
 }
 
+static void fuseapi_release(fuse_req_t req, fuse_ino_t ino,
+              struct fuse_file_info *fi)
+{
+    int rc;
+
+    LOG("fuseapi_release: %lld", ino);
+
+    rc = fscache_close(fi->fh);
+    if(rc != 0) {
+        fuse_reply_err(req, EACCES);
+    }
+}
+
 static void fuseapi_read(fuse_req_t req, fuse_ino_t ino, size_t size,
               off_t off, struct fuse_file_info *fi)
 {
@@ -247,6 +260,7 @@ static struct fuse_lowlevel_ops fapi_ll_ops = {
     .getattr = fuseapi_getattr,
     .readdir = fuseapi_readdir,
     .open = fuseapi_open,
+    .release = fuseapi_release,
     .read = fuseapi_read,
 };
 

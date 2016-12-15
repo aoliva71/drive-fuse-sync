@@ -237,24 +237,20 @@ int dbcache_browse(int64_t parent, int64_t first, dbcache_cb_t *cb)
     rc = sqlite3_reset(browse);
     rc = sqlite3_bind_int64(browse, 1, parent);
     rc = sqlite3_bind_int64(browse, 2, first);
-    for(;;) {
-        rc = sqlite3_step(browse);
-        if(SQLITE_ROW == rc) {
-            id = sqlite3_column_int64(browse, 0);
-            uuid = sqlite3_column_text(browse, 1);
-            name = sqlite3_column_text(browse, 2);
-            type = sqlite3_column_int(browse, 3);
-            size = sqlite3_column_int64(browse, 4);
-            mode = sqlite3_column_int(browse, 5);
-            sync = sqlite3_column_int(browse, 6);
-            checksum = sqlite3_column_text(browse, 7);
+    rc = sqlite3_step(browse);
+    if(SQLITE_ROW == rc) {
+        id = sqlite3_column_int64(browse, 0);
+        uuid = sqlite3_column_text(browse, 1);
+        name = sqlite3_column_text(browse, 2);
+        type = sqlite3_column_int(browse, 3);
+        size = sqlite3_column_int64(browse, 4);
+        mode = sqlite3_column_int(browse, 5);
+        sync = sqlite3_column_int(browse, 6);
+        checksum = sqlite3_column_text(browse, 7);
 
-            rc = cb(id, uuid, name, type, size, mode, sync, checksum, parent);
-            if(rc != 0) {
-                return -1;
-            }
-        } else {
-            break;
+        rc = cb(id, uuid, name, type, size, mode, sync, checksum, parent);
+        if(rc != 0) {
+            return -1;
         }
     }
 
