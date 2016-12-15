@@ -13,6 +13,7 @@
 
 static void *fscache_run(void *);
 static char fscachedir[PATH_MAX + 1];
+static void fscache_update(const char *);
 
 int fscache_start(const char *cachedir)
 {
@@ -36,7 +37,9 @@ int fscache_open(int64_t id, int *fd)
     memset(relpath, 0, (PATH_MAX + 1) * sizeof(char));
     rc = dbcache_path(id, relpath, PATH_MAX);
     if(0 == rc) {
+        fscache_update(relpath);
         snprintf(path, PATH_MAX, "%s%s", fscachedir, relpath);
+        
         *fd = open(path, O_RDWR);
         if((*fd) < 0) {
             rc = errno;
@@ -79,4 +82,42 @@ static void *fscache_run(void *opaque)
     (void)opaque;
 }
 
+static void fscache_update(const char *rel)
+{
+    int rc;
+    char path[PATH_MAX + 1];
+    char *slash;
+    const char *tmp;
+    struct stat st;
+    FILE *f;
+
+    /* create cache dirs if not exist */
+    memset(path, 0, (PATH_MAX + 1) * sizeof(char));
+    snprintf(path, PATH_MAX, "%s%s", fscachedir, rel);
+    tmp = path;
+    tmp += strlen(fscachedir);
+    tmp++;
+
+    while(*tmp) {
+        slash = strchr(tmp, '/');
+        if(NULL == slash) {
+            break;
+        }
+        *slash = 0;
+        mkdir(path, (mode_t)0700);
+        *slash = '/';
+        tmp = slash;
+        tmp++;
+    }
+    
+    rc = stat(path, &st);
+    if(rc != 0) {
+        /* file not found, download (faking for now) */
+        f = fopen(path, "w");
+        if(f) {
+            fputs("dummy content", f);
+            fclose(f);
+        }
+    }
+}
 
