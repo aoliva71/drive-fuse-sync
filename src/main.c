@@ -16,6 +16,7 @@
 
 #include "dbcache.h"
 #include "driveapi.h"
+#include "fscache.h"
 #include "fuseapi.h"
 #include "inotifyapi.h"
 
@@ -61,6 +62,8 @@ int main(int argc, char *argv[])
 
     syslog(LOG_INFO, "starting");
 
+    fscache_start(conf.basedir);
+
     dbcache_open(conf.dbfile);
     dbcache_updatepasswd(conf.passwd, DRIVE_PASSWD_MAX);
 
@@ -97,6 +100,8 @@ int main(int argc, char *argv[])
     fuse_stop();
 
     dbcache_close();
+
+    fscache_stop();
 
     syslog(LOG_INFO, "stopping");
     closelog();

@@ -1,5 +1,4 @@
 
-#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -17,6 +16,8 @@
 
 #include <stdarg.h>
 #define LOG(...) printf(__VA_ARGS__); printf("\n")
+
+#define DIRSIZE     4096
 
 static const char *fuseapi_str = "Hello World!\n";
 static const char *fuseapi_name = "hello";
@@ -48,7 +49,7 @@ static int fuseapi_stat(fuse_ino_t ino, struct stat *stbuf)
         stbuf->st_gid = gid;
         switch(type) {
         case 1:
-            stbuf->st_size = 4096;
+            stbuf->st_size = DIRSIZE;
             break;
         case 2:
             stbuf->st_size = size;
@@ -108,7 +109,7 @@ static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
         e.attr.st_gid = gid;
         switch(type) {
         case 1:
-            e.attr.st_size = 4096;
+            e.attr.st_size = DIRSIZE;
             break;
         case 2:
             e.attr.st_size = size;
@@ -131,7 +132,8 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
                  off_t off, struct fuse_file_info *fi)
 {
     int rc;
-    uint8_t buf[4096];
+#define RDDIRBUF_SIZE   4096
+    uint8_t buf[RDDIRBUF_SIZE];
     struct stat st;
     size_t blen;
     size_t len;
@@ -139,8 +141,8 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
     LOG("fuseapi_readdir - ino: %lld, size: %lld, off: %lld", ino, sz, off);
     (void)fi;
 
-    if(sz > 4096) {
-        sz = 4096;
+    if(sz > RDDIRBUF_SIZE) {
+        sz = RDDIRBUF_SIZE;
     }
 
     len = blen = 0;
@@ -148,7 +150,7 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
     int browsecb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, int sync, const char *checksum,
             int64_t parent) {
-        memset(buf, 0, 4096 * sizeof(uint8_t));
+        memset(buf, 0, RDDIRBUF_SIZE * sizeof(uint8_t));
         if(0 == off) {
             memset(&st, 0, sizeof(struct stat));
             st.st_mode = S_IFDIR|0x700;
@@ -179,7 +181,7 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
         st.st_gid = gid;
         switch(type) {
         case 1:
-            st.st_size = 4096;
+            st.st_size = DIRSIZE;
             break;
         case 2:
             st.st_size = size;
@@ -199,31 +201,45 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
     } else {
         fuse_reply_err(req, ENOTDIR);
     }
+#undef RDDIRBUF_SIZE
 }
 
 static void fuseapi_open(fuse_req_t req, fuse_ino_t ino,
               struct fuse_file_info *fi)
 {
+    int rc;
+    int fd;
+
     LOG("fuseapi_open: %lld", ino);
 
-    /*if (ino != 2)
-        fuse_reply_err(req, EISDIR);
-    else if ((fi->flags & 3) != O_RDONLY)
+    rc = fscache_open(ino, &fd);
+    if(0 == rc) {
+        fi->fh = fd;
+        fuse_reply_open(req, fi);
+    } else {
         fuse_reply_err(req, EACCES);
-    else
-        fuse_reply_open(req, fi);*/
-    fuse_reply_err(req, EACCES);
+    }
 }
 
 static void fuseapi_read(fuse_req_t req, fuse_ino_t ino, size_t size,
               off_t off, struct fuse_file_info *fi)
 {
+    int rc;
+
     (void) fi;
 
     LOG("fuseapi_read: %lld", ino);
 
-    assert(ino == 2);
-    //reply_buf_limited(req, fuseapi_str, strlen(fuseapi_str), off, size);
+    int readcb(const void *data, size_t len)
+    {
+        fuse_reply_buf(req, data, len);
+        return 0;
+    }
+
+    rc = fscache_read(fi->fh, readcb, off, size);
+    if(rc != 0) {
+        fuse_reply_err(req, EACCES);
+    }
 }
 
 static struct fuse_lowlevel_ops fapi_ll_ops = {

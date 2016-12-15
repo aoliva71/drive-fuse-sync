@@ -27,5 +27,7 @@ int dbcache_modifymode(int64_t, mode_t);
 int dbcache_modifysize(int64_t, size_t);
 int dbcache_deleteentry(int64_t);
 
+int dbcache_path(int64_t, char *, size_t);
+
 #endif /* _DBCACHE_H_ */
 

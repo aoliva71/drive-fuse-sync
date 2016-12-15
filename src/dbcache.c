@@ -294,6 +294,58 @@ int dbcache_deleteentry(int64_t id)
     return rc;
 }
 
+int dbcache_path(int64_t id, char *path, size_t len)
+{
+    int rc;
+    off_t off;
+    size_t l;
+    int64_t parent;
+    int i, hlen, flen;
+    char tmp;
+
+    /* write entry */
+    off = 0;
+    l = snprintf(path + off, len, "%lld", id);
+    off += l;
+    len -= l;
+    strncpy(path + off, "/", len);
+    off++;
+    len--;
+ 
+    /* recursively find parents */
+    for(;;) {
+        rc = sqlite3_reset(pinpoint);
+        rc = sqlite3_bind_int64(pinpoint, 1, id);
+        rc = sqlite3_step(pinpoint);
+        if(rc != SQLITE_ROW) {
+            return -1;
+        }
+        parent = sqlite3_column_int64(pinpoint, 7);
+        if(0 == parent) {
+            break;
+        }
+        l = snprintf(path + off, len, "%lld", parent);
+        off += l;
+        len -= l;
+        strncpy(path + off, "/", len);
+        off++;
+        len--;
+        id = parent;
+    }
+
+    /* now reverse */
+    flen = strlen(path);
+    hlen = flen / 2;
+    flen--;
+    for(i = 0; i < hlen; i++) {
+        tmp = path[i];
+        path[i] = path[flen - i];
+        path[flen - i] = tmp;
+    }
+
+    return 0;
+}
+
 static void setup(void)
 {
     int rc;
