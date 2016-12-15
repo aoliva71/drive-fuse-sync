@@ -291,12 +291,14 @@ int fuse_stop(void)
     fuse_session_remove_chan(fapi_ch);
     fuse_session_destroy(fapi_fs);
     fuse_unmount(fapi_mountpoint, fapi_ch);
-    pthread_join(fapi_ft, NULL);
+
+    /* join will keep pending :( */
+    /*pthread_join(fapi_ft, NULL);*/
 }
 
-static void *fuseapi_thread(void *raw)
+static void *fuseapi_thread(void *opaque)
 {
-    (void)raw;
+    (void)opaque;
     fuse_session_loop(fapi_fs);
 }
 
