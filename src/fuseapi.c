@@ -128,6 +128,42 @@ static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
     }
 }
 
+static void fuseapi_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
+               mode_t mode)
+{
+    int rc;
+    int64_t id;
+    int fd;
+    struct fuse_entry_param e;
+
+    LOG("fuseapi_mkdir: %lld, %s", parent, name);
+
+    rc = dbcache_createdir(&id, "ffffffff-ffff-ffff-ffff-ffffffffffff", name,
+            mode, 1, "@", parent);
+    if(rc != 0) {
+        fuse_reply_err(req, EACCES);
+        return;
+    }
+
+    memset(&e, 0, sizeof(struct fuse_entry_param));
+    e.ino = id;
+    e.attr_timeout = 1.0;
+    e.entry_timeout = 1.0;
+    e.attr.st_ino = id;
+    e.attr.st_mode = S_IFDIR|mode;
+    e.attr.st_nlink = 1;
+    e.attr.st_uid = uid;
+    e.attr.st_gid = gid;
+    e.attr.st_size = DIRSIZE;
+
+    rc = fscache_mkdir(id);
+    if(0 == rc) {
+        fuse_reply_entry(req, &e);
+    } else {
+        fuse_reply_err(req, EACCES);
+    }
+}
+
 static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
                  off_t off, struct fuse_file_info *fi)
 {
@@ -321,6 +357,7 @@ static void fuseapi_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 static struct fuse_lowlevel_ops fapi_ll_ops = {
     .lookup = fuseapi_lookup,
     .getattr = fuseapi_getattr,
+    .mkdir = fuseapi_mkdir,
     .readdir = fuseapi_readdir,
     .create = fuseapi_create,
     .open = fuseapi_open,
