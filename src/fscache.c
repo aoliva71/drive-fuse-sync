@@ -27,6 +27,28 @@ int fscache_stop(void)
     return 0;
 }
 
+int fscache_create(int64_t id, int *fd)
+{
+    int rc;
+    char path[PATH_MAX + 1];
+    char relpath[PATH_MAX + 1];
+
+    memset(path, 0, (PATH_MAX + 1) * sizeof(char));
+    memset(relpath, 0, (PATH_MAX + 1) * sizeof(char));
+    rc = dbcache_path(id, relpath, PATH_MAX);
+    if(0 == rc) {
+        fscache_update(relpath);
+        snprintf(path, PATH_MAX, "%s%s", fscachedir, relpath);
+        
+        *fd = creat(path, O_CREAT|O_RDWR);
+        if((*fd) < 0) {
+            rc = errno;
+        }
+    }
+    
+    return rc;
+}
+
 int fscache_open(int64_t id, int *fd)
 {
     int rc;
@@ -72,9 +94,28 @@ int fscache_read(int fd, fscache_read_cb_t *cb, off_t off, size_t len)
 #undef FSCACHE_BUFMAX
 }
 
-int fscache_write(int fd, fscache_write_cb_t *cb)
+int fscache_write(int fd, fscache_write_cb_t *cb, const void *buf, off_t off,
+        size_t len)
 {
+    int rc;
+
+    rc = lseek(fd, off, SEEK_SET);
+    rc = write(fd, buf, len);
+    rc = cb(buf, len);
+
     return 0;
+}
+
+int fscache_size(int fd, size_t *sz)
+{
+    int rc;
+    struct stat st;
+
+    rc = fstat(fd, &st);
+    if(0 == rc) {
+        *sz = st.st_size;
+    }
+    return rc;
 }
 
 static void *fscache_run(void *opaque)

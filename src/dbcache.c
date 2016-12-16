@@ -24,6 +24,7 @@ static sqlite3_stmt *deleteentity = NULL;
 static sqlite3_stmt *pinpoint = NULL;
 static sqlite3_stmt *lookup = NULL;
 static sqlite3_stmt *browse = NULL;
+static sqlite3_stmt *resize = NULL;
 static int schemaversion = -1;
 
 static void setup(void);
@@ -129,7 +130,7 @@ int dbcache_createdir(int64_t *id, const char *uuid, const char *name, mode_t mo
 
     lid = sqlite3_last_insert_rowid(sql);
     *id = lid;
-    return rc;
+    return SQLITE_DONE == rc ? 0 : -1;
 }
 
 int dbcache_createfile(int64_t *id, const char *uuid, const char *name, size_t size,
@@ -153,7 +154,7 @@ int dbcache_createfile(int64_t *id, const char *uuid, const char *name, size_t s
 
     lid = sqlite3_last_insert_rowid(sql);
     *id = lid;
-    return rc;
+    return SQLITE_DONE == rc ? 0 : -1;
 }
 
 int dbcache_pinpoint(int64_t id, dbcache_cb_t *cb)
@@ -276,7 +277,14 @@ int dbcache_modifymode(int64_t id, mode_t mode)
 
 int dbcache_modifysize(int64_t id, size_t size)
 {
-    return -1;
+    int rc;
+
+    rc = sqlite3_reset(resize);
+    rc = sqlite3_bind_int64(resize, 1, size);
+    rc = sqlite3_bind_int64(resize, 2, id);
+    rc = sqlite3_step(resize);
+
+    return rc;
 }
 
 int dbcache_deleteentry(int64_t id)
@@ -431,6 +439,9 @@ static void setup(void)
         "WHERE parent = ? AND id > ? "
         "ORDER BY id",
         -1, &browse, NULL);
+
+    sqlite3_prepare_v2(sql, "UPDATE dfs_entity SET size = ? WHERE id = ? ",
+        -1, &resize, NULL);
 }
 
 #undef LOG

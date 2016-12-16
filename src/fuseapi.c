@@ -204,6 +204,43 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
 #undef RDDIRBUF_SIZE
 }
 
+static void fuseapi_create(fuse_req_t req, fuse_ino_t parent, const char *name,
+            mode_t mode, struct fuse_file_info *fi)
+{
+    int rc;
+    int64_t id;
+    int fd;
+    struct fuse_entry_param e;
+
+    LOG("fuseapi_open: %lld, %s", parent, name);
+
+    rc = dbcache_createfile(&id, "ffffffff-ffff-ffff-ffff-ffffffffffff", name,
+            0, mode, 1, "@", parent);
+    if(rc != 0) {
+        fuse_reply_err(req, EACCES);
+        return;
+    }
+
+    memset(&e, 0, sizeof(struct fuse_entry_param));
+    e.ino = id;
+    e.attr_timeout = 1.0;
+    e.entry_timeout = 1.0;
+    e.attr.st_ino = id;
+    e.attr.st_mode = mode;
+    e.attr.st_nlink = 1;
+    e.attr.st_uid = uid;
+    e.attr.st_gid = gid;
+    e.attr.st_size = 0;
+
+    rc = fscache_create(id, &fd);
+    if(0 == rc) {
+        fi->fh = fd;
+        fuse_reply_create(req, &e, fi);
+    } else {
+        fuse_reply_err(req, EACCES);
+    }
+}
+
 static void fuseapi_open(fuse_req_t req, fuse_ino_t ino,
               struct fuse_file_info *fi)
 {
@@ -225,8 +262,14 @@ static void fuseapi_release(fuse_req_t req, fuse_ino_t ino,
               struct fuse_file_info *fi)
 {
     int rc;
+    size_t size;
 
     LOG("fuseapi_release: %lld", ino);
+
+    if(fi->flags & O_WRONLY) {
+        fscache_size(fi->fh, &size);
+        dbcache_modifysize(ino, size);
+    }
 
     rc = fscache_close(fi->fh);
     if(rc != 0) {
@@ -255,13 +298,35 @@ static void fuseapi_read(fuse_req_t req, fuse_ino_t ino, size_t size,
     }
 }
 
+static void fuseapi_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
+               size_t size, off_t off, struct fuse_file_info *fi)
+{
+    int rc;
+
+    LOG("fuseapi_write: %lld", ino);
+
+    int writecb(const void *data, size_t len)
+    {
+        (void)data;
+        fuse_reply_write(req, size);
+        return 0;
+    }
+
+    rc = fscache_write(fi->fh, writecb, buf, off, size);
+    if(rc != 0) {
+        fuse_reply_err(req, EACCES);
+    }
+}
+
 static struct fuse_lowlevel_ops fapi_ll_ops = {
     .lookup = fuseapi_lookup,
     .getattr = fuseapi_getattr,
     .readdir = fuseapi_readdir,
+    .create = fuseapi_create,
     .open = fuseapi_open,
     .release = fuseapi_release,
     .read = fuseapi_read,
+    .write = fuseapi_write,
 };
 
 static pthread_t fapi_ft;
