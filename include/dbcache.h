@@ -27,6 +27,8 @@ int dbcache_browse(int64_t, int64_t, dbcache_cb_t *);
 int dbcache_renameentry(int64_t, const char *);
 int dbcache_modifymode(int64_t, mode_t);
 int dbcache_modifysize(int64_t, size_t);
+int dbcache_modifyatime(int64_t, const struct timespec *);
+int dbcache_modifymtime(int64_t, const struct timespec *);
 int dbcache_deleteentry(int64_t);
 
 int dbcache_path(int64_t, char *, size_t);

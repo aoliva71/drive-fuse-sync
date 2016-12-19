@@ -87,6 +87,49 @@ static void fuseapi_getattr(fuse_req_t req, fuse_ino_t ino,
     }
 }
 
+static void fuseapi_setattr(fuse_req_t req, fuse_ino_t ino,
+        struct stat *attr, int to_set, struct fuse_file_info *fi)
+{
+    int rc;
+    struct timespec tv;
+
+    LOG("fuseapi_setattr: %lld", ino);
+    (void)fi;
+
+    rc = -1;
+    if(to_set & FUSE_SET_ATTR_SIZE) {
+        rc = dbcache_modifysize(ino, attr->st_size);
+        if(rc != 0) {
+            fuse_reply_err(req, ENOENT);
+            return;
+        }
+    }
+    if(to_set & FUSE_SET_ATTR_ATIME) {
+        if(to_set & FUSE_SET_ATTR_ATIME_NOW) {
+            clock_gettime(CLOCK_REALTIME, &tv);
+            memcpy(&attr->st_atim, &tv, sizeof(struct timespec));
+        }
+        rc = dbcache_modifyatime(ino, &attr->st_atim);
+        if(rc != 0) {
+            fuse_reply_err(req, ENOENT);
+            return;
+        }
+    }
+    if(to_set & FUSE_SET_ATTR_MTIME) {
+        if(to_set & FUSE_SET_ATTR_MTIME_NOW) {
+            clock_gettime(CLOCK_REALTIME, &tv);
+            memcpy(&attr->st_mtim, &tv, sizeof(struct timespec));
+        }
+        rc = dbcache_modifyatime(ino, &attr->st_mtim);
+        if(rc != 0) {
+            fuse_reply_err(req, ENOENT);
+            return;
+        }
+    }
+
+    fuse_reply_attr(req, attr, 1.0);
+}
+
 static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
 {
     int rc;
@@ -341,6 +384,17 @@ static void fuseapi_open(fuse_req_t req, fuse_ino_t ino,
     }
 }
 
+static void fuseapi_flush(fuse_req_t req, fuse_ino_t ino,
+              struct fuse_file_info *fi)
+{
+    (void)req;
+    (void)ino;
+    (void)fi;
+
+    LOG("fuseapi_flush: %lld", ino);
+    // nothing to be done
+}
+
 static void fuseapi_release(fuse_req_t req, fuse_ino_t ino,
               struct fuse_file_info *fi)
 {
@@ -349,14 +403,16 @@ static void fuseapi_release(fuse_req_t req, fuse_ino_t ino,
 
     LOG("fuseapi_release: %lld", ino);
 
-    if(fi->flags & O_WRONLY) {
-        fscache_size(fi->fh, &size);
-        dbcache_modifysize(ino, size);
-    }
+    if(fi) {
+        if(fi->flags & O_WRONLY) {
+            fscache_size(fi->fh, &size);
+            dbcache_modifysize(ino, size);
+        }
 
-    rc = fscache_close(fi->fh);
-    if(rc != 0) {
-        fuse_reply_err(req, EACCES);
+        rc = fscache_close(fi->fh);
+        if(rc != 0) {
+            fuse_reply_err(req, EACCES);
+        }
     }
 }
 
@@ -404,10 +460,12 @@ static void fuseapi_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 static struct fuse_lowlevel_ops fapi_ll_ops = {
     .lookup = fuseapi_lookup,
     .getattr = fuseapi_getattr,
+    .setattr = fuseapi_setattr,
     .mkdir = fuseapi_mkdir,
     .readdir = fuseapi_readdir,
     .create = fuseapi_create,
     .open = fuseapi_open,
+//    .flush = fuseapi_flush,
     .release = fuseapi_release,
     .read = fuseapi_read,
     .write = fuseapi_write,

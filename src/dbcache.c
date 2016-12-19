@@ -25,9 +25,14 @@ static sqlite3_stmt *pinpoint = NULL;
 static sqlite3_stmt *lookup = NULL;
 static sqlite3_stmt *browse = NULL;
 static sqlite3_stmt *resize = NULL;
+static sqlite3_stmt *atime = NULL;
+static sqlite3_stmt *mtime = NULL;
 static int schemaversion = -1;
 
 static void setup(void);
+
+static void ts2r(double *, const struct timespec *);
+static void r2ts(struct timespec *, double);
 
 #include <stdarg.h>
 #define LOG(...) printf(__VA_ARGS__); printf("\n")
@@ -346,6 +351,34 @@ int dbcache_modifysize(int64_t id, size_t size)
     return rc;
 }
 
+int dbcache_modifyatime(int64_t id, const struct timespec *tv)
+{
+    int rc;
+    double a;
+
+    rc = sqlite3_reset(atime);
+    ts2r(&a, tv);
+    rc = sqlite3_bind_double(atime, 1, a);
+    rc = sqlite3_bind_int64(atime, 2, id);
+    rc = sqlite3_step(atime);
+
+    return SQLITE_DONE == rc ? 0 : -1;
+}
+
+int dbcache_modifymtime(int64_t id, const struct timespec *tv)
+{
+    int rc;
+    double m;
+
+    rc = sqlite3_reset(mtime);
+    ts2r(&m, tv);
+    rc = sqlite3_bind_double(mtime, 1, m);
+    rc = sqlite3_bind_int64(mtime, 2, id);
+    rc = sqlite3_step(mtime);
+
+    return SQLITE_DONE == rc ? 0 : -1;
+}
+
 int dbcache_deleteentry(int64_t id)
 {
     int rc;
@@ -506,6 +539,23 @@ static void setup(void)
 
     sqlite3_prepare_v2(sql, "UPDATE dfs_entity SET size = ? WHERE id = ? ",
         -1, &resize, NULL);
+
+    sqlite3_prepare_v2(sql, "UPDATE dfs_entity SET atime = ? WHERE id = ? ",
+        -1, &atime, NULL);
+
+    sqlite3_prepare_v2(sql, "UPDATE dfs_entity SET mtime = ? WHERE id = ? ",
+        -1, &mtime, NULL);
+}
+
+static void ts2r(double *r, const struct timespec *tv)
+{
+    *r = tv->tv_sec + tv->tv_nsec / 1000000000.0;
+}
+
+static void r2ts(struct timespec *tv, double r)
+{
+    tv->tv_sec = (time_t)r;
+    tv->tv_nsec = (r - (double)tv->tv_sec) * 1000000000L;
 }
 
 #undef LOG
