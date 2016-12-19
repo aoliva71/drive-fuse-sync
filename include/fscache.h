@@ -10,7 +10,7 @@ int fscache_stop(void);
 int fscache_mkdir(int64_t);
 
 int fscache_create(int64_t, int *);
-int fscache_open(int64_t, int *);
+int fscache_open(int64_t, int, int *);
 int fscache_close(int);
 
 typedef int (fscache_read_cb_t)(const void *, size_t);

@@ -11,6 +11,9 @@
 
 #include "dbcache.h"
 
+#include <stdarg.h>
+#define LOG(...) printf(__VA_ARGS__); printf("\n")
+
 static void *fscache_run(void *);
 static char fscachedir[PATH_MAX + 1];
 static void fscache_update(const char *);
@@ -81,7 +84,7 @@ int fscache_create(int64_t id, int *fd)
         fscache_update(relpath);
         snprintf(path, PATH_MAX, "%s%s", fscachedir, relpath);
         
-        *fd = creat(path, O_CREAT|O_RDWR);
+        *fd = creat(path, (mode_t)0600);
         if((*fd) < 0) {
             rc = errno;
         }
@@ -90,7 +93,7 @@ int fscache_create(int64_t id, int *fd)
     return rc;
 }
 
-int fscache_open(int64_t id, int *fd)
+int fscache_open(int64_t id, int flags, int *fd)
 {
     int rc;
     char path[PATH_MAX + 1];
@@ -102,8 +105,10 @@ int fscache_open(int64_t id, int *fd)
     if(0 == rc) {
         fscache_update(relpath);
         snprintf(path, PATH_MAX, "%s%s", fscachedir, relpath);
-        
-        *fd = open(path, O_RDWR);
+
+        LOG("opening: %s", path);
+        LOG("flags: %d 0x%x 0%o", flags, flags, flags);
+        *fd = open(path, flags);
         if((*fd) < 0) {
             rc = errno;
         }
@@ -194,12 +199,8 @@ static void fscache_update(const char *rel)
     
     rc = stat(path, &st);
     if(rc != 0) {
-        /* file not found, download (faking for now) */
-        f = fopen(path, "w");
-        if(f) {
-            fputs("dummy content", f);
-            fclose(f);
-        }
+        /* file not found, downloading (doing nothing for now) */
+
     }
 }
 

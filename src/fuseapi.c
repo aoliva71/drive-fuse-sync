@@ -406,7 +406,7 @@ static void fuseapi_open(fuse_req_t req, fuse_ino_t ino,
 
     LOG("fuseapi_open: %lld", ino);
 
-    rc = fscache_open(ino, &fd);
+    rc = fscache_open(ino, fi->flags, &fd);
     if(0 == rc) {
         fi->fh = fd;
         fuse_reply_open(req, fi);
@@ -435,7 +435,7 @@ static void fuseapi_release(fuse_req_t req, fuse_ino_t ino,
     LOG("fuseapi_release: %lld", ino);
 
     if(fi) {
-        if(fi->flags & O_WRONLY) {
+        if(fi->flags & O_ACCMODE) {
             fscache_size(fi->fh, &size);
             dbcache_modifysize(ino, size);
         }
