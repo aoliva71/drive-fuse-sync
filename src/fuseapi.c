@@ -19,8 +19,7 @@
 
 #define BLOCKSIZE     4096
 
-static const char *fuseapi_str = "Hello World!\n";
-static const char *fuseapi_name = "hello";
+static struct fuse_chan *fapi_ch = NULL;
 
 static uid_t uid = 0;
 static gid_t gid = 0;
@@ -156,6 +155,8 @@ static void fuseapi_setattr(fuse_req_t req, fuse_ino_t ino,
     rc = dbcache_pinpoint(ino, statcb);
     if(0 == rc) {
         fuse_reply_attr(req, &st, 1.0);
+        rc = fuse_lowlevel_notify_inval_inode(fapi_ch, ino, -1, 0);
+        LOG("invalidate: %d", rc);
     } else {
         fuse_reply_err(req, ENOENT);
     }
@@ -213,6 +214,7 @@ static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
     } else {
         fuse_reply_err(req, ENOENT);
     }
+    LOG("fuseapi_lookup exit");
 }
 
 static void fuseapi_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
@@ -438,6 +440,7 @@ static void fuseapi_release(fuse_req_t req, fuse_ino_t ino,
         if(fi->flags & O_ACCMODE) {
             fscache_size(fi->fh, &size);
             dbcache_modifysize(ino, size);
+            fuse_lowlevel_notify_inval_inode(fapi_ch, ino, 0, 0);
         }
 
         rc = fscache_close(fi->fh);
@@ -506,7 +509,6 @@ static pthread_t fapi_ft;
 static char fapi_mountpoint[PATH_MAX + 1];
 static char *fapi_argv[] = {"-f", "-ofsname=drive", NULL};
 struct fuse_args fapi_args = FUSE_ARGS_INIT(2, fapi_argv);
-static struct fuse_chan *fapi_ch = NULL;
 static struct fuse_session *fapi_fs = NULL;
 static void *fuseapi_thread(void *);
 
