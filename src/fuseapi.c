@@ -25,63 +25,53 @@ static const char *fuseapi_name = "hello";
 static uid_t uid = 0;
 static gid_t gid = 0;
 
-static int fuseapi_stat(fuse_ino_t ino, struct stat *st)
-{
-    int rc;
-
-    LOG("fuseapi_stat: %lld", ino);
-
-    int statcb(int64_t id, const char *uuid, const char *name, int type,
-            size_t size, mode_t mode, const struct timespec *atime,
-            const struct timespec *mtime, const struct timespec *ctime,
-            int sync, const char *checksum, int64_t parent) {
-        st->st_ino = id;
-        st->st_mode = mode;
-        switch(type) {
-        case 1:
-            st->st_mode |= S_IFDIR;
-            break;
-        case 2:
-            st->st_mode |= S_IFREG;
-            break;
-        }
-        st->st_nlink = 1;
-        st->st_uid = uid;
-        st->st_gid = gid;
-        switch(type) {
-        case 1:
-            st->st_size = BLOCKSIZE;
-            break;
-        case 2:
-            st->st_size = size;
-            break;
-        }
-        st->st_blksize = BLOCKSIZE;
-        st->st_blocks = st->st_size / 512L + (st->st_size % 512L ? 1L : 0L);
-        memcpy(&st->st_atim, atime, sizeof(struct timespec));
-        memcpy(&st->st_mtim, mtime, sizeof(struct timespec));
-        memcpy(&st->st_ctim, ctime, sizeof(struct timespec));
-        return 0;
-    }
-
-    rc = dbcache_pinpoint(ino, statcb);
-
-    return rc;
-}
-
 static void fuseapi_getattr(fuse_req_t req, fuse_ino_t ino,
         struct fuse_file_info *fi)
 {
     int rc;
-    struct stat stbuf;
+    struct stat st;
 
     LOG("fuseapi_getattr: %lld", ino);
     (void)fi;
 
-    memset(&stbuf, 0, sizeof(stbuf));
-    rc = fuseapi_stat(ino, &stbuf);
+    memset(&st, 0, sizeof(struct stat));
+    int statcb(int64_t id, const char *uuid, const char *name, int type,
+            size_t size, mode_t mode, const struct timespec *atime,
+            const struct timespec *mtime, const struct timespec *ctime,
+            int sync, const char *checksum, int64_t parent) {
+        st.st_ino = id;
+        st.st_mode = mode;
+        switch(type) {
+        case 1:
+            st.st_mode |= S_IFDIR;
+            break;
+        case 2:
+            st.st_mode |= S_IFREG;
+            break;
+        }
+        st.st_nlink = 1;
+        st.st_uid = uid;
+        st.st_gid = gid;
+        switch(type) {
+        case 1:
+            st.st_size = BLOCKSIZE;
+            break;
+        case 2:
+            st.st_size = size;
+            break;
+        }
+        st.st_blksize = BLOCKSIZE;
+        st.st_blocks = st.st_size / 512L + (st.st_size % 512L ? 1L : 0L);
+        memcpy(&st.st_atim, atime, sizeof(struct timespec));
+        memcpy(&st.st_mtim, mtime, sizeof(struct timespec));
+        memcpy(&st.st_ctim, ctime, sizeof(struct timespec));
+
+        return 0;
+    }
+
+    rc = dbcache_pinpoint(ino, statcb);
     if(0 == rc) {
-        fuse_reply_attr(req, &stbuf, 1.0);
+        fuse_reply_attr(req, &st, 1.0);
     } else {
         fuse_reply_err(req, ENOENT);
     }
@@ -92,6 +82,7 @@ static void fuseapi_setattr(fuse_req_t req, fuse_ino_t ino,
 {
     int rc;
     struct timespec tv;
+    struct stat st;
 
     LOG("fuseapi_setattr: %lld", ino);
     (void)fi;
@@ -120,14 +111,54 @@ static void fuseapi_setattr(fuse_req_t req, fuse_ino_t ino,
             clock_gettime(CLOCK_REALTIME, &tv);
             memcpy(&attr->st_mtim, &tv, sizeof(struct timespec));
         }
-        rc = dbcache_modifyatime(ino, &attr->st_mtim);
+        rc = dbcache_modifymtime(ino, &attr->st_mtim);
         if(rc != 0) {
             fuse_reply_err(req, ENOENT);
             return;
         }
     }
 
-    fuse_reply_attr(req, attr, 1.0);
+    memset(&st, 0, sizeof(struct stat));
+    int statcb(int64_t id, const char *uuid, const char *name, int type,
+            size_t size, mode_t mode, const struct timespec *atime,
+            const struct timespec *mtime, const struct timespec *ctime,
+            int sync, const char *checksum, int64_t parent) {
+        st.st_ino = id;
+        st.st_mode = mode;
+        switch(type) {
+        case 1:
+            st.st_mode |= S_IFDIR;
+            break;
+        case 2:
+            st.st_mode |= S_IFREG;
+            break;
+        }
+        st.st_nlink = 1;
+        st.st_uid = uid;
+        st.st_gid = gid;
+        switch(type) {
+        case 1:
+            st.st_size = BLOCKSIZE;
+            break;
+        case 2:
+            st.st_size = size;
+            break;
+        }
+        st.st_blksize = BLOCKSIZE;
+        st.st_blocks = st.st_size / 512L + (st.st_size % 512L ? 1L : 0L);
+        memcpy(&st.st_atim, atime, sizeof(struct timespec));
+        memcpy(&st.st_mtim, mtime, sizeof(struct timespec));
+        memcpy(&st.st_ctim, ctime, sizeof(struct timespec));
+
+        return 0;
+    }
+
+    rc = dbcache_pinpoint(ino, statcb);
+    if(0 == rc) {
+        fuse_reply_attr(req, &st, 1.0);
+    } else {
+        fuse_reply_err(req, ENOENT);
+    }
 }
 
 static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
@@ -332,7 +363,7 @@ static void fuseapi_create(fuse_req_t req, fuse_ino_t parent, const char *name,
     struct fuse_entry_param e;
     struct timespec tv;
 
-    LOG("fuseapi_open: %lld, %s", parent, name);
+    LOG("fuseapi_create: %lld, %s", parent, name);
 
     rc = dbcache_createfile(&id, "ffffffff-ffff-ffff-ffff-ffffffffffff", name,
             0, mode, 1, "@", parent);
