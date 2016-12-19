@@ -32,12 +32,33 @@ int fscache_mkdir(int64_t id)
     int rc;
     char path[PATH_MAX + 1];
     char relpath[PATH_MAX + 1];
+    const char *tmp;
+    char *slash;
 
     memset(path, 0, (PATH_MAX + 1) * sizeof(char));
     memset(relpath, 0, (PATH_MAX + 1) * sizeof(char));
     rc = dbcache_path(id, relpath, PATH_MAX);
     if(0 == rc) {
         snprintf(path, PATH_MAX, "%s%s", fscachedir, relpath);
+
+        tmp = path;
+        tmp += strlen(fscachedir);
+        tmp++;
+
+        while(*tmp) {
+            slash = strchr(tmp, '/');
+            if(NULL == slash) {
+                break;
+            }
+            *slash = 0;
+            /* do not check rc as these calls may fail when dir is already
+               there */
+            mkdir(path, (mode_t)0700);
+            *slash = '/';
+            tmp = slash;
+            tmp++;
+        }
+
         rc = mkdir(path, (mode_t)0700);
         if(rc != 0) {
             rc = errno;

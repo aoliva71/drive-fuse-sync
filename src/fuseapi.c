@@ -17,7 +17,7 @@
 #include <stdarg.h>
 #define LOG(...) printf(__VA_ARGS__); printf("\n")
 
-#define DIRSIZE     4096
+#define BLOCKSIZE     4096
 
 static const char *fuseapi_str = "Hello World!\n";
 static const char *fuseapi_name = "hello";
@@ -25,36 +25,42 @@ static const char *fuseapi_name = "hello";
 static uid_t uid = 0;
 static gid_t gid = 0;
 
-static int fuseapi_stat(fuse_ino_t ino, struct stat *stbuf)
+static int fuseapi_stat(fuse_ino_t ino, struct stat *st)
 {
     int rc;
 
     LOG("fuseapi_stat: %lld", ino);
 
     int statcb(int64_t id, const char *uuid, const char *name, int type,
-            size_t size, mode_t mode, int sync, const char *checksum,
-            int64_t parent) {
-        stbuf->st_ino = id;
-        stbuf->st_mode = mode;
+            size_t size, mode_t mode, const struct timespec *atime,
+            const struct timespec *mtime, const struct timespec *ctime,
+            int sync, const char *checksum, int64_t parent) {
+        st->st_ino = id;
+        st->st_mode = mode;
         switch(type) {
         case 1:
-            stbuf->st_mode |= S_IFDIR;
+            st->st_mode |= S_IFDIR;
             break;
         case 2:
-            stbuf->st_mode |= S_IFREG;
+            st->st_mode |= S_IFREG;
             break;
         }
-        stbuf->st_nlink = 1;
-        stbuf->st_uid = uid;
-        stbuf->st_gid = gid;
+        st->st_nlink = 1;
+        st->st_uid = uid;
+        st->st_gid = gid;
         switch(type) {
         case 1:
-            stbuf->st_size = DIRSIZE;
+            st->st_size = BLOCKSIZE;
             break;
         case 2:
-            stbuf->st_size = size;
+            st->st_size = size;
             break;
         }
+        st->st_blksize = BLOCKSIZE;
+        st->st_blocks = st->st_size / 512L + (st->st_size % 512L ? 1L : 0L);
+        memcpy(&st->st_atim, atime, sizeof(struct timespec));
+        memcpy(&st->st_mtim, mtime, sizeof(struct timespec));
+        memcpy(&st->st_ctim, ctime, sizeof(struct timespec));
         return 0;
     }
 
@@ -89,8 +95,9 @@ static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
     LOG("fuseapi_lookup: %s", name);
 
     int lookupcb(int64_t id, const char *uuid, const char *name, int type,
-            size_t size, mode_t mode, int sync, const char *checksum,
-            int64_t parent) {
+            size_t size, mode_t mode, const struct timespec *atime,
+            const struct timespec *mtime, const struct timespec *ctime,
+            int sync, const char *checksum, int64_t parent) {
         e.ino = id;
         e.attr_timeout = 1.0;
         e.entry_timeout = 1.0;
@@ -109,12 +116,18 @@ static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
         e.attr.st_gid = gid;
         switch(type) {
         case 1:
-            e.attr.st_size = DIRSIZE;
+            e.attr.st_size = BLOCKSIZE;
             break;
         case 2:
             e.attr.st_size = size;
             break;
         }
+        e.attr.st_blksize = BLOCKSIZE;
+        e.attr.st_blocks = e.attr.st_size / 512L +
+                (e.attr.st_size % 512L ? 1L : 0L);
+        memcpy(&e.attr.st_atim, atime, sizeof(struct timespec));
+        memcpy(&e.attr.st_mtim, mtime, sizeof(struct timespec));
+        memcpy(&e.attr.st_ctim, ctime, sizeof(struct timespec));
 
         return 0;
     }
@@ -135,6 +148,7 @@ static void fuseapi_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
     int64_t id;
     int fd;
     struct fuse_entry_param e;
+    struct timespec tv;
 
     LOG("fuseapi_mkdir: %lld, %s", parent, name);
 
@@ -154,7 +168,14 @@ static void fuseapi_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
     e.attr.st_nlink = 1;
     e.attr.st_uid = uid;
     e.attr.st_gid = gid;
-    e.attr.st_size = DIRSIZE;
+    e.attr.st_size = BLOCKSIZE;
+    e.attr.st_blksize = BLOCKSIZE;
+    e.attr.st_blocks = e.attr.st_size / 512L +
+            (e.attr.st_size % 512L ? 1L : 0L);
+    clock_gettime(CLOCK_REALTIME, &tv);
+    memcpy(&e.attr.st_atim, &tv, sizeof(struct timespec));
+    memcpy(&e.attr.st_mtim, &tv, sizeof(struct timespec));
+    memcpy(&e.attr.st_ctim, &tv, sizeof(struct timespec));
 
     rc = fscache_mkdir(id);
     if(0 == rc) {
@@ -184,8 +205,9 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
     len = blen = 0;
 
     int browsecb(int64_t id, const char *uuid, const char *name, int type,
-            size_t size, mode_t mode, int sync, const char *checksum,
-            int64_t parent) {
+            size_t size, mode_t mode, const struct timespec *atime,
+            const struct timespec *mtime, const struct timespec *ctime,
+            int sync, const char *checksum, int64_t parent) {
         memset(buf, 0, RDDIRBUF_SIZE * sizeof(uint8_t));
         if(0 == off) {
             memset(&st, 0, sizeof(struct stat));
@@ -193,6 +215,19 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
             st.st_nlink = 1;
             st.st_uid = uid;
             st.st_gid = gid;
+            switch(type) {
+            case 1:
+                st.st_size = BLOCKSIZE;
+                break;
+            case 2:
+                st.st_size = size;
+                break;
+            }
+            st.st_blksize = BLOCKSIZE;
+            st.st_blocks = st.st_size / 512L + (st.st_size % 512L ? 1L : 0L);
+            memcpy(&st.st_atim, atime, sizeof(struct timespec));
+            memcpy(&st.st_mtim, mtime, sizeof(struct timespec));
+            memcpy(&st.st_ctim, ctime, sizeof(struct timespec));
             blen = fuse_add_direntry(req, buf, sz, ".", &st, 1);
             len += blen;
             sz -= blen;
@@ -217,12 +252,17 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
         st.st_gid = gid;
         switch(type) {
         case 1:
-            st.st_size = DIRSIZE;
+            st.st_size = BLOCKSIZE;
             break;
         case 2:
             st.st_size = size;
             break;
         }
+        st.st_blksize = BLOCKSIZE;
+        st.st_blocks = st.st_size / 512L + (st.st_size % 512L ? 1L : 0L);
+        memcpy(&st.st_atim, atime, sizeof(struct timespec));
+        memcpy(&st.st_mtim, mtime, sizeof(struct timespec));
+        memcpy(&st.st_ctim, ctime, sizeof(struct timespec));
 
         blen = fuse_add_direntry(req, buf + len, sz, name, &st, id);
         len += blen;
@@ -247,6 +287,7 @@ static void fuseapi_create(fuse_req_t req, fuse_ino_t parent, const char *name,
     int64_t id;
     int fd;
     struct fuse_entry_param e;
+    struct timespec tv;
 
     LOG("fuseapi_open: %lld, %s", parent, name);
 
@@ -267,6 +308,12 @@ static void fuseapi_create(fuse_req_t req, fuse_ino_t parent, const char *name,
     e.attr.st_uid = uid;
     e.attr.st_gid = gid;
     e.attr.st_size = 0;
+    e.attr.st_blksize = BLOCKSIZE;
+    e.attr.st_blocks = e.attr.st_size / 512L + (e.attr.st_size % 512L ? 1 : 0);
+    clock_gettime(CLOCK_REALTIME, &tv);
+    memcpy(&e.attr.st_atim, &tv, sizeof(struct timespec));
+    memcpy(&e.attr.st_mtim, &tv, sizeof(struct timespec));
+    memcpy(&e.attr.st_ctim, &tv, sizeof(struct timespec));
 
     rc = fscache_create(id, &fd);
     if(0 == rc) {

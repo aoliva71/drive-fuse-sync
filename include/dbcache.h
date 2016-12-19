@@ -2,11 +2,13 @@
 #ifndef _DBCACHE_H_
 #define _DBCACHE_H_
 
+#include <time.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
 typedef int (dbcache_cb_t)(int64_t, const char *, const char *, int, size_t,
-        mode_t, int, const char *, int64_t);
+        mode_t, const struct timespec *, const struct timespec *,
+        const struct timespec *, int, const char *, int64_t);
 
 int dbcache_open(const char *);
 int dbcache_close(void);
