@@ -87,8 +87,15 @@ static void fuseapi_setattr(fuse_req_t req, fuse_ino_t ino,
     (void)fi;
 
     rc = -1;
+    if(to_set & FUSE_SET_ATTR_MODE) {
+        rc = dbcache_chmod(ino, attr->st_mode);
+        if(rc != 0) {
+            fuse_reply_err(req, ENOENT);
+            return;
+        }
+    }
     if(to_set & FUSE_SET_ATTR_SIZE) {
-        rc = dbcache_modifysize(ino, attr->st_size);
+        rc = dbcache_resize(ino, attr->st_size);
         if(rc != 0) {
             fuse_reply_err(req, ENOENT);
             return;
@@ -99,7 +106,7 @@ static void fuseapi_setattr(fuse_req_t req, fuse_ino_t ino,
             clock_gettime(CLOCK_REALTIME, &tv);
             memcpy(&attr->st_atim, &tv, sizeof(struct timespec));
         }
-        rc = dbcache_modifyatime(ino, &attr->st_atim);
+        rc = dbcache_chatime(ino, &attr->st_atim);
         if(rc != 0) {
             fuse_reply_err(req, ENOENT);
             return;
@@ -110,7 +117,7 @@ static void fuseapi_setattr(fuse_req_t req, fuse_ino_t ino,
             clock_gettime(CLOCK_REALTIME, &tv);
             memcpy(&attr->st_mtim, &tv, sizeof(struct timespec));
         }
-        rc = dbcache_modifymtime(ino, &attr->st_mtim);
+        rc = dbcache_chmtime(ino, &attr->st_mtim);
         if(rc != 0) {
             fuse_reply_err(req, ENOENT);
             return;
@@ -439,7 +446,7 @@ static void fuseapi_release(fuse_req_t req, fuse_ino_t ino,
     if(fi) {
         if(fi->flags & O_ACCMODE) {
             fscache_size(fi->fh, &size);
-            dbcache_modifysize(ino, size);
+            dbcache_resize(ino, size);
             fuse_lowlevel_notify_inval_inode(fapi_ch, ino, 0, 0);
         }
 
