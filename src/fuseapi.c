@@ -61,6 +61,9 @@ static void fuseapi_getattr(fuse_req_t req, fuse_ino_t ino,
         }
         st.st_blksize = BLOCKSIZE;
         st.st_blocks = st.st_size / 512L + (st.st_size % 512L ? 1L : 0L);
+        if(0 == st.st_size) {
+            st.st_blocks++;
+        }
         memcpy(&st.st_atim, atime, sizeof(struct timespec));
         memcpy(&st.st_mtim, mtime, sizeof(struct timespec));
         memcpy(&st.st_ctim, ctime, sizeof(struct timespec));
@@ -152,6 +155,9 @@ static void fuseapi_setattr(fuse_req_t req, fuse_ino_t ino,
         }
         st.st_blksize = BLOCKSIZE;
         st.st_blocks = st.st_size / 512L + (st.st_size % 512L ? 1L : 0L);
+        if(0 == st.st_size) {
+            st.st_blocks++;
+        }
         memcpy(&st.st_atim, atime, sizeof(struct timespec));
         memcpy(&st.st_mtim, mtime, sizeof(struct timespec));
         memcpy(&st.st_ctim, ctime, sizeof(struct timespec));
@@ -207,6 +213,9 @@ static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
         e.attr.st_blksize = BLOCKSIZE;
         e.attr.st_blocks = e.attr.st_size / 512L +
                 (e.attr.st_size % 512L ? 1L : 0L);
+        if(0 == e.attr.st_size) {
+            e.attr.st_blocks++;
+        }
         memcpy(&e.attr.st_atim, atime, sizeof(struct timespec));
         memcpy(&e.attr.st_mtim, mtime, sizeof(struct timespec));
         memcpy(&e.attr.st_ctim, ctime, sizeof(struct timespec));
@@ -255,6 +264,9 @@ static void fuseapi_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
     e.attr.st_blksize = BLOCKSIZE;
     e.attr.st_blocks = e.attr.st_size / 512L +
             (e.attr.st_size % 512L ? 1L : 0L);
+    if(0 == e.attr.st_size) {
+        e.attr.st_blocks++;
+    }
     clock_gettime(CLOCK_REALTIME, &tv);
     memcpy(&e.attr.st_atim, &tv, sizeof(struct timespec));
     memcpy(&e.attr.st_mtim, &tv, sizeof(struct timespec));
@@ -308,6 +320,9 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
             }
             st.st_blksize = BLOCKSIZE;
             st.st_blocks = st.st_size / 512L + (st.st_size % 512L ? 1L : 0L);
+            if(0 == st.st_size) {
+                st.st_blocks++;
+            }
             memcpy(&st.st_atim, atime, sizeof(struct timespec));
             memcpy(&st.st_mtim, mtime, sizeof(struct timespec));
             memcpy(&st.st_ctim, ctime, sizeof(struct timespec));
@@ -343,6 +358,9 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
         }
         st.st_blksize = BLOCKSIZE;
         st.st_blocks = st.st_size / 512L + (st.st_size % 512L ? 1L : 0L);
+        if(0 == st.st_size) {
+            st.st_blocks++;
+        }
         memcpy(&st.st_atim, atime, sizeof(struct timespec));
         memcpy(&st.st_mtim, mtime, sizeof(struct timespec));
         memcpy(&st.st_ctim, ctime, sizeof(struct timespec));
@@ -387,12 +405,16 @@ static void fuseapi_create(fuse_req_t req, fuse_ino_t parent, const char *name,
     e.entry_timeout = 1.0;
     e.attr.st_ino = id;
     e.attr.st_mode = mode;
+    e.attr.st_mode |= S_IFREG;
     e.attr.st_nlink = 1;
     e.attr.st_uid = uid;
     e.attr.st_gid = gid;
     e.attr.st_size = 0;
     e.attr.st_blksize = BLOCKSIZE;
     e.attr.st_blocks = e.attr.st_size / 512L + (e.attr.st_size % 512L ? 1 : 0);
+    if(0 == e.attr.st_size) {
+        e.attr.st_blocks++;
+    }
     clock_gettime(CLOCK_REALTIME, &tv);
     memcpy(&e.attr.st_atim, &tv, sizeof(struct timespec));
     memcpy(&e.attr.st_mtim, &tv, sizeof(struct timespec));
