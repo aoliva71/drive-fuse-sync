@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <malloc.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -128,16 +129,38 @@ int fscache_close(int fd)
 int fscache_read(int fd, fscache_read_cb_t *cb, off_t off, size_t len)
 {
     int rc;
-#define FSCACHE_BUFMAX  4096
-    uint8_t buf[FSCACHE_BUFMAX];
-    if(len < FSCACHE_BUFMAX) {
-        len = FSCACHE_BUFMAX;
+    void *buf;
+    off_t noff;
+    size_t l;
+
+    buf = malloc(len);
+    if(NULL == buf) {
+        return -1;
     }
-    rc = lseek(fd, off, SEEK_SET);
+    LOG("off=%lld, len=%lld", off, len);
+
+    noff = lseek(fd, off, SEEK_SET);
+    if(noff != off) {
+        LOG("unable to seek");
+        free(buf);
+        return -1;
+    }
+
+    LOG("read %d, %p, %lld", fd, buf, len);
     rc = read(fd, buf, len);
-    rc = cb(buf, len);
+    if(rc < 0) {
+        LOG("errno: %d", errno);
+        free(buf);
+        return -1;
+    }
+    l = rc;
+    rc = cb(buf, l);
+    free(buf);
+    if(rc != 0) {
+        return -1;
+    }
+
     return 0;
-#undef FSCACHE_BUFMAX
 }
 
 int fscache_write(int fd, fscache_write_cb_t *cb, const void *buf, off_t off,

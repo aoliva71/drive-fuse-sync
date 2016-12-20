@@ -1,6 +1,2 @@
 
-add blocksize and blocks (for both files/dirs)
-
-add atime, mtime, ctime as real values (decimals => fraction os seconds)
-add api to manage timestamps in files and dirs
-
+fix using vi

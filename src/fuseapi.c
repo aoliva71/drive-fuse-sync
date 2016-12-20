@@ -468,6 +468,7 @@ static void fuseapi_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 
     int readcb(const void *data, size_t len)
     {
+        LOG("calling fuse_reply_buf(%p, %p, %lld);", req, data, len);
         fuse_reply_buf(req, data, len);
         return 0;
     }
