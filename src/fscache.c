@@ -198,6 +198,29 @@ int fscache_write(int fd, fscache_write_cb_t *cb, const void *buf, off_t off,
     return 0;
 }
 
+int fscache_rm(int64_t id)
+{
+    int rc;
+    char path[PATH_MAX + 1];
+    char relpath[PATH_MAX + 1];
+    const char *tmp;
+    char *slash;
+
+    memset(path, 0, (PATH_MAX + 1) * sizeof(char));
+    memset(relpath, 0, (PATH_MAX + 1) * sizeof(char));
+    rc = dbcache_path(id, relpath, PATH_MAX);
+    if(0 == rc) {
+        snprintf(path, PATH_MAX, "%s%s", fscachedir, relpath);
+
+        rc = unlink(path);
+        if(rc != 0) {
+            rc = errno;
+        }
+    }
+
+    return rc;
+}
+
 int fscache_size(int fd, size_t *sz)
 {
     int rc;

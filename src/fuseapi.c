@@ -24,6 +24,65 @@ static struct fuse_chan *fapi_ch = NULL;
 static uid_t uid = 0;
 static gid_t gid = 0;
 
+
+static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
+{
+    int rc;
+    struct fuse_entry_param e;
+
+    LOG("fuseapi_lookup: %s", name);
+
+    int lookupcb(int64_t id, const char *uuid, const char *name, int type,
+            size_t size, mode_t mode, const struct timespec *atime,
+            const struct timespec *mtime, const struct timespec *ctime,
+            int sync, int refcount, const char *checksum, int64_t parent) {
+        e.ino = id;
+        e.attr_timeout = 1.0;
+        e.entry_timeout = 1.0;
+        e.attr.st_ino = id;
+        e.attr.st_mode = mode;
+        switch(type) {
+        case 1:
+            e.attr.st_mode |= S_IFDIR;
+            break;
+        case 2:
+            e.attr.st_mode |= S_IFREG;
+            break;
+        }
+        e.attr.st_nlink = 1;
+        e.attr.st_uid = uid;
+        e.attr.st_gid = gid;
+        switch(type) {
+        case 1:
+            e.attr.st_size = BLOCKSIZE;
+            break;
+        case 2:
+            e.attr.st_size = size;
+            break;
+        }
+        e.attr.st_blksize = BLOCKSIZE;
+        e.attr.st_blocks = e.attr.st_size / 512L +
+                (e.attr.st_size % 512L ? 1L : 0L);
+        if(0 == e.attr.st_size) {
+            e.attr.st_blocks++;
+        }
+        memcpy(&e.attr.st_atim, atime, sizeof(struct timespec));
+        memcpy(&e.attr.st_mtim, mtime, sizeof(struct timespec));
+        memcpy(&e.attr.st_ctim, ctime, sizeof(struct timespec));
+
+        return 0;
+    }
+
+    memset(&e, 0, sizeof(struct fuse_entry_param));
+    rc = dbcache_lookup(name, parent, lookupcb);
+    if(0 == rc) {
+        fuse_reply_entry(req, &e);
+    } else {
+        fuse_reply_err(req, ENOENT);
+    }
+    LOG("fuseapi_lookup exit");
+}
+
 static void fuseapi_getattr(fuse_req_t req, fuse_ino_t ino,
         struct fuse_file_info *fi)
 {
@@ -175,64 +234,6 @@ static void fuseapi_setattr(fuse_req_t req, fuse_ino_t ino,
     }
 }
 
-static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
-{
-    int rc;
-    struct fuse_entry_param e;
-
-    LOG("fuseapi_lookup: %s", name);
-
-    int lookupcb(int64_t id, const char *uuid, const char *name, int type,
-            size_t size, mode_t mode, const struct timespec *atime,
-            const struct timespec *mtime, const struct timespec *ctime,
-            int sync, int refcount, const char *checksum, int64_t parent) {
-        e.ino = id;
-        e.attr_timeout = 1.0;
-        e.entry_timeout = 1.0;
-        e.attr.st_ino = id;
-        e.attr.st_mode = mode;
-        switch(type) {
-        case 1:
-            e.attr.st_mode |= S_IFDIR;
-            break;
-        case 2:
-            e.attr.st_mode |= S_IFREG;
-            break;
-        }
-        e.attr.st_nlink = 1;
-        e.attr.st_uid = uid;
-        e.attr.st_gid = gid;
-        switch(type) {
-        case 1:
-            e.attr.st_size = BLOCKSIZE;
-            break;
-        case 2:
-            e.attr.st_size = size;
-            break;
-        }
-        e.attr.st_blksize = BLOCKSIZE;
-        e.attr.st_blocks = e.attr.st_size / 512L +
-                (e.attr.st_size % 512L ? 1L : 0L);
-        if(0 == e.attr.st_size) {
-            e.attr.st_blocks++;
-        }
-        memcpy(&e.attr.st_atim, atime, sizeof(struct timespec));
-        memcpy(&e.attr.st_mtim, mtime, sizeof(struct timespec));
-        memcpy(&e.attr.st_ctim, ctime, sizeof(struct timespec));
-
-        return 0;
-    }
-
-    memset(&e, 0, sizeof(struct fuse_entry_param));
-    rc = dbcache_lookup(name, parent, lookupcb);
-    if(0 == rc) {
-        fuse_reply_entry(req, &e);
-    } else {
-        fuse_reply_err(req, ENOENT);
-    }
-    LOG("fuseapi_lookup exit");
-}
-
 static void fuseapi_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
                mode_t mode)
 {
@@ -277,6 +278,131 @@ static void fuseapi_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
         fuse_reply_entry(req, &e);
     } else {
         fuse_reply_err(req, EACCES);
+    }
+}
+
+static void fuseapi_unlink(fuse_req_t req, fuse_ino_t parent, const char *name)
+{
+    int rc;
+
+    LOG("fuseapi_unlink: %lld, %s", parent, name);
+    int rmcb(int64_t id, const char *uuid, const char *name, int type,
+            size_t size, mode_t mode, const struct timespec *atime,
+            const struct timespec *mtime, const struct timespec *ctime,
+            int sync, int refcount, const char *checksum, int64_t parent) {
+        if(0 == refcount) {
+            fscache_rm(id);
+        }
+    }
+    rc = dbcache_rm(name, parent, rmcb);
+    if(0 == rc) {
+        /* need an empty buffer to move from pending read */
+        fuse_reply_buf(req, NULL, 0);
+    } else {
+        fuse_reply_err(req, EACCES);
+    }
+}
+
+static void fuseapi_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name)
+{
+    int rc;
+
+    LOG("fuseapi_rmdir: %lld, %s", parent, name);
+    int rmdircb(int64_t id, const char *uuid, const char *name, int type,
+            size_t size, mode_t mode, const struct timespec *atime,
+            const struct timespec *mtime, const struct timespec *ctime,
+            int sync, int refcount, const char *checksum, int64_t parent) {
+        if(0 == refcount) {
+            fscache_rmdir(id);
+        }
+    }
+    rc = dbcache_rmdir(name, parent, rmdircb);
+    if(0 == rc) {
+        /* need an empty buffer to move from pending read */
+        fuse_reply_buf(req, NULL, 0);
+    } else {
+        fuse_reply_err(req, EACCES);
+    }
+}
+
+static void fuseapi_open(fuse_req_t req, fuse_ino_t ino,
+              struct fuse_file_info *fi)
+{
+    int rc;
+    int fd;
+
+    LOG("fuseapi_open: %lld", ino);
+
+    rc = fscache_open(ino, fi->flags, &fd);
+    if(0 == rc) {
+        fi->fh = fd;
+        fuse_reply_open(req, fi);
+    } else {
+        fuse_reply_err(req, EACCES);
+    }
+}
+
+static void fuseapi_read(fuse_req_t req, fuse_ino_t ino, size_t size,
+              off_t off, struct fuse_file_info *fi)
+{
+    int rc;
+
+    (void) fi;
+
+    LOG("fuseapi_read: %lld", ino);
+
+    int readcb(const void *data, size_t len)
+    {
+        LOG("calling fuse_reply_buf(%p, %p, %lld);", req, data, len);
+        fuse_reply_buf(req, data, len);
+        return 0;
+    }
+
+    rc = fscache_read(fi->fh, readcb, off, size);
+    if(rc != 0) {
+        fuse_reply_err(req, EACCES);
+    }
+}
+
+static void fuseapi_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
+               size_t size, off_t off, struct fuse_file_info *fi)
+{
+    int rc;
+
+    LOG("fuseapi_write: %lld", ino);
+
+    int writecb(const void *data, size_t len)
+    {
+        (void)data;
+        fuse_reply_write(req, size);
+        return 0;
+    }
+
+    rc = fscache_write(fi->fh, writecb, buf, off, size);
+    if(rc != 0) {
+        fuse_reply_err(req, EACCES);
+    }
+}
+
+static void fuseapi_release(fuse_req_t req, fuse_ino_t ino,
+              struct fuse_file_info *fi)
+{
+    int rc;
+    size_t size;
+
+    LOG("fuseapi_release: %lld", ino);
+
+    if(fi) {
+        if(fi->flags & O_ACCMODE) {
+            fscache_size(fi->fh, &size);
+            dbcache_resize(ino, size);
+            fuse_lowlevel_notify_inval_inode(fapi_ch, ino, 0, 0);
+        }
+
+        rc = fscache_close(fi->fh);
+        if(rc != 0) {
+            fuse_reply_err(req, EACCES);
+        }
     }
 }
 
@@ -381,28 +507,6 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
 #undef RDDIRBUF_SIZE
 }
 
-static void fuseapi_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name)
-{
-    int rc;
-
-    LOG("fuseapi_rmdir: %lld, %s", parent, name);
-    int rmdircb(int64_t id, const char *uuid, const char *name, int type,
-            size_t size, mode_t mode, const struct timespec *atime,
-            const struct timespec *mtime, const struct timespec *ctime,
-            int sync, int refcount, const char *checksum, int64_t parent) {
-        if(0 == refcount) {
-            fscache_rmdir(id);
-        }
-    }
-    rc = dbcache_rmdir(name, parent, rmdircb);
-    if(0 == rc) {
-        /* need an empty buffer to move from pending read */
-        fuse_reply_buf(req, NULL, 0);
-    } else {
-        fuse_reply_err(req, EACCES);
-    }
-}
-
 static void fuseapi_create(fuse_req_t req, fuse_ino_t parent, const char *name,
             mode_t mode, struct fuse_file_info *fi)
 {
@@ -451,23 +555,6 @@ static void fuseapi_create(fuse_req_t req, fuse_ino_t parent, const char *name,
     }
 }
 
-static void fuseapi_open(fuse_req_t req, fuse_ino_t ino,
-              struct fuse_file_info *fi)
-{
-    int rc;
-    int fd;
-
-    LOG("fuseapi_open: %lld", ino);
-
-    rc = fscache_open(ino, fi->flags, &fd);
-    if(0 == rc) {
-        fi->fh = fd;
-        fuse_reply_open(req, fi);
-    } else {
-        fuse_reply_err(req, EACCES);
-    }
-}
-
 static void fuseapi_flush(fuse_req_t req, fuse_ino_t ino,
               struct fuse_file_info *fi)
 {
@@ -479,83 +566,32 @@ static void fuseapi_flush(fuse_req_t req, fuse_ino_t ino,
     // nothing to be done
 }
 
-static void fuseapi_release(fuse_req_t req, fuse_ino_t ino,
-              struct fuse_file_info *fi)
-{
-    int rc;
-    size_t size;
-
-    LOG("fuseapi_release: %lld", ino);
-
-    if(fi) {
-        if(fi->flags & O_ACCMODE) {
-            fscache_size(fi->fh, &size);
-            dbcache_resize(ino, size);
-            fuse_lowlevel_notify_inval_inode(fapi_ch, ino, 0, 0);
-        }
-
-        rc = fscache_close(fi->fh);
-        if(rc != 0) {
-            fuse_reply_err(req, EACCES);
-        }
-    }
-}
-
-static void fuseapi_read(fuse_req_t req, fuse_ino_t ino, size_t size,
-              off_t off, struct fuse_file_info *fi)
-{
-    int rc;
-
-    (void) fi;
-
-    LOG("fuseapi_read: %lld", ino);
-
-    int readcb(const void *data, size_t len)
-    {
-        LOG("calling fuse_reply_buf(%p, %p, %lld);", req, data, len);
-        fuse_reply_buf(req, data, len);
-        return 0;
-    }
-
-    rc = fscache_read(fi->fh, readcb, off, size);
-    if(rc != 0) {
-        fuse_reply_err(req, EACCES);
-    }
-}
-
-static void fuseapi_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
-               size_t size, off_t off, struct fuse_file_info *fi)
-{
-    int rc;
-
-    LOG("fuseapi_write: %lld", ino);
-
-    int writecb(const void *data, size_t len)
-    {
-        (void)data;
-        fuse_reply_write(req, size);
-        return 0;
-    }
-
-    rc = fscache_write(fi->fh, writecb, buf, off, size);
-    if(rc != 0) {
-        fuse_reply_err(req, EACCES);
-    }
-}
-
 static struct fuse_lowlevel_ops fapi_ll_ops = {
     .lookup = fuseapi_lookup,
+//    .forget = fuseapi_forget,
     .getattr = fuseapi_getattr,
     .setattr = fuseapi_setattr,
+//    .readlink = fuseapi_readlink,
+//    .mknod = fuseapi_mknod,
     .mkdir = fuseapi_mkdir,
-    .readdir = fuseapi_readdir,
+    .unlink = fuseapi_unlink,
     .rmdir = fuseapi_rmdir,
-    .create = fuseapi_create,
+//    .symlink = fuseapi_symlink,
+//    .rename = fuseapi_rename,
+//    .link = fuseapi_link,
     .open = fuseapi_open,
-//    .flush = fuseapi_flush,
-    .release = fuseapi_release,
     .read = fuseapi_read,
     .write = fuseapi_write,
+//    .flush = fuseapi_flush,
+    .release = fuseapi_release,
+//    .fsync = fuseapi_fsync,
+//    .opendir = fuseapi_opendir,
+    .readdir = fuseapi_readdir,
+//    .releasedir = fuseapi_releasedir,
+//    .fsyncdir = fuseapi_fsyncdir,
+//    .statfs = fuseapi_statfs,
+//    .access = fuseapi_access,
+    .create = fuseapi_create,
 };
 
 static pthread_t fapi_ft;

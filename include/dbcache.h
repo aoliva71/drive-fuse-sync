@@ -30,6 +30,7 @@ int dbcache_resize(int64_t, size_t);
 int dbcache_chatime(int64_t, const struct timespec *);
 int dbcache_chmtime(int64_t, const struct timespec *);
 int dbcache_rmdir(const char *, int64_t, dbcache_cb_t *);
+int dbcache_rm(const char *, int64_t, dbcache_cb_t *);
 int dbcache_delete(int64_t);
 
 int dbcache_path(int64_t, char *, size_t);

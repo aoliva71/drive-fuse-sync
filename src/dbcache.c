@@ -403,6 +403,59 @@ int dbcache_delete(int64_t id)
     return rc;
 }
 
+int dbcache_rm(const char *name, int64_t parent, dbcache_cb_t *cb)
+{
+    int rc;
+    sqlite3_int64 id;
+    const char *extid;
+    int type;
+    size_t size;
+    mode_t mode;
+    double r;
+    struct timespec atime, mtime, ctime;
+    int sync;
+    int refcount;
+    const char *checksum;
+
+    rc = sqlite3_reset(ilookup);
+    rc = sqlite3_bind_text(ilookup, 1, name, -1, NULL);
+    rc = sqlite3_bind_int64(ilookup, 2, parent);
+    rc = sqlite3_step(ilookup);
+    if(rc != SQLITE_ROW) {
+        /* noentry */
+        return -1;
+    }
+
+    id = sqlite3_column_int64(ilookup, 0);
+    extid = sqlite3_column_text(ilookup, 1);
+    type = sqlite3_column_int(ilookup, 2);
+    if(type != 2) {
+        /* notfile */
+        return -1;
+    }
+    size = sqlite3_column_int64(ilookup, 3);
+    mode = sqlite3_column_int(ilookup, 4);
+    r = sqlite3_column_double(ipinpoint, 5);
+    r2ts(&atime, r);
+    r = sqlite3_column_double(ipinpoint, 6);
+    r2ts(&mtime, r);
+    r = sqlite3_column_double(ipinpoint, 7);
+    r2ts(&ctime, r);
+    sync = sqlite3_column_int(ilookup, 8);
+    refcount = sqlite3_column_int(ilookup, 9);
+    checksum = sqlite3_column_text(ilookup, 10);
+
+    rc = cb(id, extid, name, type, size, mode, &atime, &mtime, &ctime, sync,
+            refcount, checksum, parent);
+    if(0 == rc) {
+        rc = sqlite3_reset(idelete);
+        rc = sqlite3_bind_int64(idelete, 1, id);
+        rc = sqlite3_step(idelete);
+    }
+
+    return SQLITE_DONE == rc ? 0 : -1;
+}
+
 int dbcache_rmdir(const char *name, int64_t parent, dbcache_cb_t *cb)
 {
     int rc;
@@ -488,7 +541,7 @@ int dbcache_path(int64_t id, char *path, size_t len)
         if(rc != SQLITE_ROW) {
             return -1;
         }
-        parent = sqlite3_column_int64(ipinpoint, 12);
+        parent = sqlite3_column_int64(ipinpoint, 11);
         if(0 == parent) {
             break;
         }
