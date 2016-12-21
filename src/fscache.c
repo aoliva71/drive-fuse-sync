@@ -156,11 +156,11 @@ int fscache_read(int fd, fscache_read_cb_t *cb, off_t off, size_t len)
     off_t noff;
     size_t l;
 
+    LOG("off=%lld, len=%lld", off, len);
     buf = malloc(len);
     if(NULL == buf) {
         return -1;
     }
-    LOG("off=%lld, len=%lld", off, len);
 
     noff = lseek(fd, off, SEEK_SET);
     if(noff != off) {

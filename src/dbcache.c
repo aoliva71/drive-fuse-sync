@@ -281,7 +281,7 @@ int dbcache_lookup(const char *name, int64_t parent, dbcache_cb_t *cb)
 }
 
 
-int dbcache_browse(int64_t parent, int64_t first, dbcache_cb_t *cb)
+int dbcache_browse(int *err, int64_t parent, int64_t first, dbcache_cb_t *cb)
 {
     int rc;
     int64_t id;
@@ -322,6 +322,8 @@ int dbcache_browse(int64_t parent, int64_t first, dbcache_cb_t *cb)
         if(rc != 0) {
             return -1;
         }
+    } else {
+        *err = 1;
     }
 
     return 0;

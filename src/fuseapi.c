@@ -227,8 +227,6 @@ static void fuseapi_setattr(fuse_req_t req, fuse_ino_t ino,
     rc = dbcache_pinpoint(ino, statcb);
     if(0 == rc) {
         fuse_reply_attr(req, &st, 1.0);
-        rc = fuse_lowlevel_notify_inval_inode(fapi_ch, ino, -1, 0);
-        LOG("invalidate: %d", rc);
     } else {
         fuse_reply_err(req, ENOENT);
     }
@@ -400,7 +398,6 @@ static void fuseapi_release(fuse_req_t req, fuse_ino_t ino,
         if(fi->flags & O_ACCMODE) {
             fscache_size(fi->fh, &size);
             dbcache_resize(ino, size);
-            fuse_lowlevel_notify_inval_inode(fapi_ch, ino, 0, 0);
         }
 
         rc = fscache_close(fi->fh);
@@ -408,6 +405,7 @@ static void fuseapi_release(fuse_req_t req, fuse_ino_t ino,
             fuse_reply_err(req, EACCES);
         }
     }
+    fuse_reply_buf(req, NULL, 0);
 }
 
 static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
@@ -419,6 +417,7 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
     struct stat st;
     size_t blen;
     size_t len;
+    int err;
 
     LOG("fuseapi_readdir - ino: %lld, size: %lld, off: %lld", ino, sz, off);
     (void)fi;
@@ -502,9 +501,11 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
         return 0;
     }
    
-    rc = dbcache_browse(ino, off, browsecb);
+    rc = dbcache_browse(&err, ino, off, browsecb);
     if(0 == rc) {
-        fuse_reply_buf(req, NULL, 0);
+        if(1 == err) {
+            fuse_reply_buf(req, NULL, 0);
+        }
     } else {
         fuse_reply_err(req, ENOTDIR);
     }
