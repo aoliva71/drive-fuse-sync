@@ -72,6 +72,29 @@ int fscache_mkdir(int64_t id)
     return rc;
 }
 
+int fscache_rmdir(int64_t id)
+{
+    int rc;
+    char path[PATH_MAX + 1];
+    char relpath[PATH_MAX + 1];
+    const char *tmp;
+    char *slash;
+
+    memset(path, 0, (PATH_MAX + 1) * sizeof(char));
+    memset(relpath, 0, (PATH_MAX + 1) * sizeof(char));
+    rc = dbcache_path(id, relpath, PATH_MAX);
+    if(0 == rc) {
+        snprintf(path, PATH_MAX, "%s%s", fscachedir, relpath);
+
+        rc = rmdir(path);
+        if(rc != 0) {
+            rc = errno;
+        }
+    }
+
+    return rc;
+}
+
 int fscache_create(int64_t id, int *fd)
 {
     int rc;

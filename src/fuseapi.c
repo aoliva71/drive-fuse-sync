@@ -302,7 +302,7 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
     int browsecb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
-            int sync, int refcunt, const char *checksum, int64_t parent) {
+            int sync, int refcount, const char *checksum, int64_t parent) {
         memset(buf, 0, RDDIRBUF_SIZE * sizeof(uint8_t));
         if(0 == off) {
             memset(&st, 0, sizeof(struct stat));
@@ -379,6 +379,27 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
         fuse_reply_err(req, ENOTDIR);
     }
 #undef RDDIRBUF_SIZE
+}
+
+static void fuseapi_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name)
+{
+    int rc;
+
+    LOG("fuseapi_rmdir: %lld, %s", parent, name);
+    int rmdircb(int64_t id, const char *uuid, const char *name, int type,
+            size_t size, mode_t mode, const struct timespec *atime,
+            const struct timespec *mtime, const struct timespec *ctime,
+            int sync, int refcount, const char *checksum, int64_t parent) {
+        if(0 == refcount) {
+            fscache_rmdir(id);
+        }
+    }
+    rc = dbcache_rmdir(name, parent, rmdircb);
+    if(0 == rc) {
+        fuse_reply_buf(req, NULL, 0);
+    } else {
+        fuse_reply_err(req, EACCES);
+    }
 }
 
 static void fuseapi_create(fuse_req_t req, fuse_ino_t parent, const char *name,
@@ -527,6 +548,7 @@ static struct fuse_lowlevel_ops fapi_ll_ops = {
     .setattr = fuseapi_setattr,
     .mkdir = fuseapi_mkdir,
     .readdir = fuseapi_readdir,
+    .rmdir = fuseapi_rmdir,
     .create = fuseapi_create,
     .open = fuseapi_open,
 //    .flush = fuseapi_flush,
