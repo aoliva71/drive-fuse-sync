@@ -396,6 +396,7 @@ static void fuseapi_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name)
     }
     rc = dbcache_rmdir(name, parent, rmdircb);
     if(0 == rc) {
+        /* need an empty buffer to move from pending read */
         fuse_reply_buf(req, NULL, 0);
     } else {
         fuse_reply_err(req, EACCES);
