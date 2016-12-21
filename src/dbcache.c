@@ -567,6 +567,28 @@ int dbcache_path(int64_t id, char *path, size_t len)
     return 0;
 }
 
+int dbcache_addref(int64_t id)
+{
+    int rc;
+
+    rc = sqlite3_reset(iaddref);
+    rc = sqlite3_bind_int64(iaddref, 1, id);
+    rc = sqlite3_step(iaddref);
+
+    return rc;
+}
+
+int dbcache_rmref(int64_t id)
+{
+    int rc;
+
+    rc = sqlite3_reset(irmref);
+    rc = sqlite3_bind_int64(irmref, 1, id);
+    rc = sqlite3_step(irmref);
+
+    return rc;
+}
+
 static void setup(void)
 {
     int rc;

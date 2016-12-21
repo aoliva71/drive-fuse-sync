@@ -33,6 +33,9 @@ int dbcache_rmdir(const char *, int64_t, dbcache_cb_t *);
 int dbcache_rm(const char *, int64_t, dbcache_cb_t *);
 int dbcache_delete(int64_t);
 
+int dbcache_addref(int64_t);
+int dbcache_rmref(int64_t);
+
 int dbcache_path(int64_t, char *, size_t);
 
 #endif /* _DBCACHE_H_ */

@@ -333,6 +333,8 @@ static void fuseapi_open(fuse_req_t req, fuse_ino_t ino,
 
     LOG("fuseapi_open: %lld", ino);
 
+    dbcache_addref(ino);
+
     rc = fscache_open(ino, fi->flags, &fd);
     if(0 == rc) {
         fi->fh = fd;
@@ -391,6 +393,8 @@ static void fuseapi_release(fuse_req_t req, fuse_ino_t ino,
     size_t size;
 
     LOG("fuseapi_release: %lld", ino);
+
+    dbcache_rmref(ino);
 
     if(fi) {
         if(fi->flags & O_ACCMODE) {
