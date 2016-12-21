@@ -37,7 +37,7 @@ static void fuseapi_getattr(fuse_req_t req, fuse_ino_t ino,
     int statcb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
-            int sync, const char *checksum, int64_t parent) {
+            int sync, int refcount, const char *checksum, int64_t parent) {
         st.st_ino = id;
         st.st_mode = mode;
         switch(type) {
@@ -131,7 +131,7 @@ static void fuseapi_setattr(fuse_req_t req, fuse_ino_t ino,
     int statcb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
-            int sync, const char *checksum, int64_t parent) {
+            int sync, int refcount, const char *checksum, int64_t parent) {
         st.st_ino = id;
         st.st_mode = mode;
         switch(type) {
@@ -185,7 +185,7 @@ static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
     int lookupcb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
-            int sync, const char *checksum, int64_t parent) {
+            int sync, int refcount, const char *checksum, int64_t parent) {
         e.ino = id;
         e.attr_timeout = 1.0;
         e.entry_timeout = 1.0;
@@ -302,7 +302,7 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
     int browsecb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
-            int sync, const char *checksum, int64_t parent) {
+            int sync, int refcunt, const char *checksum, int64_t parent) {
         memset(buf, 0, RDDIRBUF_SIZE * sizeof(uint8_t));
         if(0 == off) {
             memset(&st, 0, sizeof(struct stat));
