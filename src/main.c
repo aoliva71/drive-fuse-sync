@@ -26,6 +26,7 @@ struct _conf
     char username[DRIVE_USER_MAX + 1];
     char passwd[DRIVE_PASSWD_MAX + 1];
     char basedir[PATH_MAX + 1];
+    char cachedir[PATH_MAX + 1];
     char mountpoint[PATH_MAX + 1];
 
     
@@ -53,6 +54,7 @@ int main(int argc, char *argv[])
         daemon(0, 0);
     }
     mkdir(conf.basedir, (mode_t)0700);
+    mkdir(conf.cachedir, (mode_t)0700);
     mkdir(conf.mountpoint, (mode_t)0700);
     openlog(PACKAGE_NAME, LOG_CONS|LOG_PID, LOG_DAEMON);
 
@@ -62,7 +64,7 @@ int main(int argc, char *argv[])
 
     syslog(LOG_INFO, "starting");
 
-    fscache_start(conf.basedir);
+    fscache_start(conf.cachedir);
 
     dbcache_open(conf.dbfile);
     dbcache_updatepasswd(conf.passwd, DRIVE_PASSWD_MAX);
@@ -196,6 +198,7 @@ static void parse_command_line(conf_t *conf, int argc, char *argv[])
         fprintf(stderr, "no username provided\n");
         exit(1);
     }
+    snprintf(conf->cachedir, PATH_MAX, "%s/%s.cache", conf->basedir, conf->username);
     snprintf(conf->pidfile, PATH_MAX, "%s/%s.pid", conf->basedir, conf->username);
     snprintf(conf->dbfile, PATH_MAX, "%s/%s.db", conf->basedir, conf->username);
 }
