@@ -642,6 +642,35 @@ static void setup(void)
             ")", NULL, NULL, NULL);
     sqlite3_exec(sql, "CREATE INDEX IF NOT EXISTS dfs_inode_parent "
             "ON dfs_inode ( parent )", NULL, NULL, NULL);
+    sqlite3_exec(sql, "CREATE TABLE IF NOT EXISTS dfs_token ( "
+            "id INTEGER NOT NULL PRIMARY KEY, "
+            "revoke_uri TEXT NOT NULL, "
+            "id_token TEXT, "
+            "token_info_uri TEXT NOT NULL, "
+            "client_id TEXT NOT NULL, "
+            "invalid INTEGER NOT NULL, "
+            "refresh_token TEXT, "
+            "access_token TEXT NOT NULL, "
+            "user_agent TEXT NOT NULL, "
+            "token_expiry INTEGER NOT NULL, "
+            "token_uri TEXT NOT NULL, "
+            "client_secret TEXT NOT NULL "
+            ")", NULL, NULL, NULL);
+    sqlite3_exec(sql, "CREATE TABLE IF NOT EXISTS dfs_scope ( "
+            "id INTEGER NOT NULL PRIMARY KEY, "
+            "token_id INTEGER NOT NULL, "
+            "scope TEXT, "
+            "FOREIGN KEY ( token_id ) REFERENCES dfs_token ( id ) "
+            "ON DELETE CASCADE "
+            ")", NULL, NULL, NULL);
+    sqlite3_exec(sql, "CREATE TABLE IF NOT EXISTS dfs_response ( "
+            "id INTEGER NOT NULL PRIMARY KEY, "
+            "expires_in INTEGER NOT NULL, "
+            "access_token TEXT NOT NULL, "
+            "token_type TEXT NOT NULL, "
+            "FOREIGN KEY ( token_id ) REFERENCES dfs_token ( id ) "
+            "ON DELETE CASCADE "
+            ")", NULL, NULL, NULL);
 
     sqlite3_prepare_v2(sql, "SELECT extid FROM dfs_inode WHERE parent IS NULL",
             -1, &sel, NULL);
