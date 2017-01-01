@@ -5,6 +5,9 @@
 #define DRIVE_USER_MAX     63
 #define DRIVE_PASSWD_MAX   63
 
+int drive_start(void);
+int drive_stop(void);
+
 int drive_login(const char *, const char *);
 int drive_logout(void);
 
