@@ -22,14 +22,15 @@
 
 struct _conf
 {
+    int setup;
     int daemonize;
-    char username[DRIVE_USER_MAX + 1];
-    char passwd[DRIVE_PASSWD_MAX + 1];
+    
     char basedir[PATH_MAX + 1];
     char cachedir[PATH_MAX + 1];
     char mountpoint[PATH_MAX + 1];
 
-    
+#define USER_MAX    63
+    char user[USER_MAX + 1];
     char pidfile[PATH_MAX + 1];
     char dbfile[PATH_MAX + 1];
 };
@@ -49,6 +50,11 @@ int main(int argc, char *argv[])
     set_defaults(&conf);
     parse_command_line(&conf, argc, argv);
 
+    if(conf.setup) {
+        drive_setup();
+        exit(0);
+    }
+
     if(conf.daemonize) {
         daemon(0, 0);
     }
@@ -66,7 +72,6 @@ int main(int argc, char *argv[])
     fscache_start(conf.cachedir);
 
     dbcache_open(conf.dbfile);
-    dbcache_updatepasswd(conf.passwd, DRIVE_PASSWD_MAX);
 
     /*
     dbcache_createdir(&parent, "0000000a-000a-000a-000a-00000000000a",
@@ -132,11 +137,11 @@ static void set_defaults(conf_t *conf)
 static void parse_command_line(conf_t *conf, int argc, char *argv[])
 {
     int o;
-#define OPTS    "dU:P:b:m:h"
+#define OPTS    "sdu:b:m:h"
     static struct option lopts[] = {
+        {"setup", 0, NULL, 's'},
         {"daemonize", 0, NULL, 'd'},
-        {"user-name", 1, NULL, 'U'},
-        {"password-file", 1, NULL, 'P'},
+        {"user-name", 1, NULL, 'u'},
         {"base-dir", 1, NULL, 'b'},
         {"mount-point", 1, NULL, 'm'},
         {"help", 0, NULL, 'h'},
@@ -149,17 +154,15 @@ static void parse_command_line(conf_t *conf, int argc, char *argv[])
             break;
         }
         switch(o) {
+        case 's':
+            conf->setup = 1;
+            break;
         case 'd':
             conf->daemonize = 1;
             break;
-        case 'U':
+        case 'u':
             if(optarg) {
-                strncpy(conf->username, optarg, DRIVE_USER_MAX);
-            }
-            break;
-        case 'P':
-            if(optarg) {
-                strncpy(conf->passwd, optarg, DRIVE_PASSWD_MAX);
+                strncpy(conf->user, optarg, USER_MAX);
             }
             break;
         case 'b':
@@ -174,29 +177,28 @@ static void parse_command_line(conf_t *conf, int argc, char *argv[])
             break;
         case 'h':
             printf("usage: %s "
+                "[-s|--setup] "
                 "[-d|--daemonize] "
                 "[-b|--base-dir <BASEDIR>] "
                 "[-m|--mount-point <MOUNTPOINT>] "
-                "-U|--user-name <USERNAME> "
-                "[-P|--password <PASSWORD>] "
+                "-u|--user <USERNAME> "
                 " | "
                 "-h|--help\n"
                 "\n"
                 "BASEDIR defaults to ${HOME}/.drivefusesync\n"
                 "USER is the drive user\n"
-                "PASSWORD will overwrite existing configuration (if any)\n"
                 "\n", argv[0]);
             exit(0);
         }
     }
 
-    if(0 == strlen(conf->username)) {
+    if(0 == strlen(conf->user)) {
         fprintf(stderr, "no username provided\n");
         exit(1);
     }
-    snprintf(conf->cachedir, PATH_MAX, "%s/%s.cache", conf->basedir, conf->username);
-    snprintf(conf->pidfile, PATH_MAX, "%s/%s.pid", conf->basedir, conf->username);
-    snprintf(conf->dbfile, PATH_MAX, "%s/%s.db", conf->basedir, conf->username);
+    snprintf(conf->cachedir, PATH_MAX, "%s/%s.cache", conf->basedir, conf->user);
+    snprintf(conf->pidfile, PATH_MAX, "%s/%s.pid", conf->basedir, conf->user);
+    snprintf(conf->dbfile, PATH_MAX, "%s/%s.db", conf->basedir, conf->user);
 }
 
 static void write_pid(const char *pidfile)
