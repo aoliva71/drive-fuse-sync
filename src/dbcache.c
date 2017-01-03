@@ -215,8 +215,8 @@ int dbcache_pinpoint(int64_t id, dbcache_cb_t *cb)
         return -1;
     }
     
-    extid = sqlite3_column_text(ipinpoint, 0);
-    name = sqlite3_column_text(ipinpoint, 1);
+    extid = (const char *)sqlite3_column_text(ipinpoint, 0);
+    name = (const char *)sqlite3_column_text(ipinpoint, 1);
     type = sqlite3_column_int(ipinpoint, 2);
     size = sqlite3_column_int64(ipinpoint, 3);
     mode = sqlite3_column_int(ipinpoint, 4);
@@ -228,7 +228,7 @@ int dbcache_pinpoint(int64_t id, dbcache_cb_t *cb)
     r2ts(&ctime, r);
     sync = sqlite3_column_int(ipinpoint, 8);
     refcount = sqlite3_column_int(ipinpoint, 9);
-    checksum = sqlite3_column_text(ipinpoint, 10);
+    checksum = (const char *)sqlite3_column_text(ipinpoint, 10);
     parent = sqlite3_column_int64(ipinpoint, 11);
 
     rc = cb(id, extid, name, type, size, mode, &atime, &mtime, &ctime, sync,
@@ -260,7 +260,7 @@ int dbcache_lookup(const char *name, int64_t parent, dbcache_cb_t *cb)
     }
     
     id = sqlite3_column_int64(ilookup, 0);
-    extid = sqlite3_column_text(ilookup, 1);
+    extid = (const char *)sqlite3_column_text(ilookup, 1);
     type = sqlite3_column_int(ilookup, 2);
     size = sqlite3_column_int64(ilookup, 3);
     mode = sqlite3_column_int(ilookup, 4);
@@ -272,7 +272,7 @@ int dbcache_lookup(const char *name, int64_t parent, dbcache_cb_t *cb)
     r2ts(&ctime, r);
     sync = sqlite3_column_int(ilookup, 8);
     refcount = sqlite3_column_int(ilookup, 9);
-    checksum = sqlite3_column_text(ilookup, 10);
+    checksum = (const char *)sqlite3_column_text(ilookup, 10);
 
     rc = cb(id, extid, name, type, size, mode, &atime, &mtime, &ctime, sync,
             refcount, checksum, parent);
@@ -302,8 +302,8 @@ int dbcache_browse(int *err, int64_t parent, int64_t first, dbcache_cb_t *cb)
     rc = sqlite3_step(ibrowse);
     if(SQLITE_ROW == rc) {
         id = sqlite3_column_int64(ibrowse, 0);
-        extid = sqlite3_column_text(ibrowse, 1);
-        name = sqlite3_column_text(ibrowse, 2);
+        extid = (const char *)sqlite3_column_text(ibrowse, 1);
+        name = (const char *)sqlite3_column_text(ibrowse, 2);
         type = sqlite3_column_int(ibrowse, 3);
         size = sqlite3_column_int64(ibrowse, 4);
         mode = sqlite3_column_int(ibrowse, 5);
@@ -315,7 +315,7 @@ int dbcache_browse(int *err, int64_t parent, int64_t first, dbcache_cb_t *cb)
         r2ts(&ctime, r);
         sync = sqlite3_column_int(ibrowse, 9);
         refcount = sqlite3_column_int(ibrowse, 10);
-        checksum = sqlite3_column_text(ibrowse, 11);
+        checksum = (const char *)sqlite3_column_text(ibrowse, 11);
 
         rc = cb(id, extid, name, type, size, mode, &atime, &mtime, &ctime,
                 sync, refcount, checksum, parent);
@@ -429,7 +429,7 @@ int dbcache_rm(const char *name, int64_t parent, dbcache_cb_t *cb)
     }
 
     id = sqlite3_column_int64(ilookup, 0);
-    extid = sqlite3_column_text(ilookup, 1);
+    extid = (const char *)sqlite3_column_text(ilookup, 1);
     type = sqlite3_column_int(ilookup, 2);
     if(type != 2) {
         /* notfile */
@@ -445,7 +445,7 @@ int dbcache_rm(const char *name, int64_t parent, dbcache_cb_t *cb)
     r2ts(&ctime, r);
     sync = sqlite3_column_int(ilookup, 8);
     refcount = sqlite3_column_int(ilookup, 9);
-    checksum = sqlite3_column_text(ilookup, 10);
+    checksum = (const char *)sqlite3_column_text(ilookup, 10);
 
     rc = cb(id, extid, name, type, size, mode, &atime, &mtime, &ctime, sync,
             refcount, checksum, parent);
@@ -482,7 +482,7 @@ int dbcache_rmdir(const char *name, int64_t parent, dbcache_cb_t *cb)
     }
     
     id = sqlite3_column_int64(ilookup, 0);
-    extid = sqlite3_column_text(ilookup, 1);
+    extid = (const char *)sqlite3_column_text(ilookup, 1);
     type = sqlite3_column_int(ilookup, 2);
     size = sqlite3_column_int64(ilookup, 3);
     mode = sqlite3_column_int(ilookup, 4);
@@ -494,7 +494,7 @@ int dbcache_rmdir(const char *name, int64_t parent, dbcache_cb_t *cb)
     r2ts(&ctime, r);
     sync = sqlite3_column_int(ilookup, 8);
     refcount = sqlite3_column_int(ilookup, 9);
-    checksum = sqlite3_column_text(ilookup, 10);
+    checksum = (const char *)sqlite3_column_text(ilookup, 10);
 
     rc = sqlite3_reset(ibrowse);
     rc = sqlite3_bind_int64(ibrowse, 1, id);
@@ -528,7 +528,7 @@ int dbcache_path(int64_t id, char *path, size_t len)
 
     /* write entry */
     off = 0;
-    l = snprintf(path + off, len, "%lld", id);
+    l = snprintf(path + off, len, "%lld", (long long int)id);
     off += l;
     len -= l;
     strncpy(path + off, "/", len);
@@ -547,7 +547,7 @@ int dbcache_path(int64_t id, char *path, size_t len)
         if(0 == parent) {
             break;
         }
-        l = snprintf(path + off, len, "%lld", parent);
+        l = snprintf(path + off, len, "%lld", (long long int)parent);
         off += l;
         len -= l;
         strncpy(path + off, "/", len);

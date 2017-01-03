@@ -45,7 +45,6 @@ static void write_pid(const char *);
 int main(int argc, char *argv[])
 {
     conf_t conf;
-    int64_t id, parent;
     
     set_defaults(&conf);
     parse_command_line(&conf, argc, argv);
@@ -85,11 +84,8 @@ int main(int argc, char *argv[])
     */
 
     fuse_start(conf.mountpoint);
-    
 
-    drive_login(conf.username, conf.passwd);
-    /* forget passwd immediately */
-    memset(conf.passwd, 0, (DRIVE_PASSWD_MAX + 1) * sizeof(char));
+    drive_start();
 
     for(keep_running = 1; keep_running;) {
         /* check remote changes */
@@ -97,7 +93,7 @@ int main(int argc, char *argv[])
         sleep(1);
     }
 
-    drive_logout();
+    drive_stop();
 
     fuse_stop();
 

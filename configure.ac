@@ -14,8 +14,8 @@ AC_PROG_CC
 
 # Checks for libraries.
 PKG_CHECK_MODULES(FUSE,[fuse])
-PKG_CHECK_MODULES(LIBCURL,[libcurl])
-PKG_CHECK_MODULES(LIBCURL,[json-c])
+PKG_CHECK_MODULES(CURL,[libcurl])
+PKG_CHECK_MODULES(JSONC,[json-c])
 PKG_CHECK_MODULES(SQLITE3,[sqlite3])
 
 # Checks for header files.

@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <malloc.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -15,6 +16,7 @@
 #include <stdarg.h>
 #define LOG(...) printf(__VA_ARGS__); printf("\n")
 
+static pthread_t fscache_thread;
 static void *fscache_run(void *);
 static char fscachedir[PATH_MAX + 1];
 static void fscache_update(const char *);
@@ -23,11 +25,13 @@ int fscache_start(const char *cachedir)
 {
     memset(fscachedir, 0, (PATH_MAX + 1) * sizeof(char));
     strncpy(fscachedir, cachedir, PATH_MAX);
+    pthread_create(&fscache_thread, NULL, fscache_run, NULL);
     return 0;
 }
 
 int fscache_stop(void)
 {
+    pthread_join(fscache_thread, NULL);
     return 0;
 }
 
@@ -77,8 +81,6 @@ int fscache_rmdir(int64_t id)
     int rc;
     char path[PATH_MAX + 1];
     char relpath[PATH_MAX + 1];
-    const char *tmp;
-    char *slash;
 
     memset(path, 0, (PATH_MAX + 1) * sizeof(char));
     memset(relpath, 0, (PATH_MAX + 1) * sizeof(char));
@@ -156,7 +158,7 @@ int fscache_read(int fd, fscache_read_cb_t *cb, off_t off, size_t len)
     off_t noff;
     size_t l;
 
-    LOG("off=%lld, len=%lld", off, len);
+    LOG("off=%lld, len=%lld", (long long int)off, (long long int)len);
     buf = malloc(len);
     if(NULL == buf) {
         return -1;
@@ -169,7 +171,7 @@ int fscache_read(int fd, fscache_read_cb_t *cb, off_t off, size_t len)
         return -1;
     }
 
-    LOG("read %d, %p, %lld", fd, buf, len);
+    LOG("read %d, %p, %lld", fd, buf, (long long int)len);
     rc = read(fd, buf, len);
     if(rc < 0) {
         LOG("errno: %d", errno);
@@ -194,6 +196,7 @@ int fscache_write(int fd, fscache_write_cb_t *cb, const void *buf, off_t off,
     rc = lseek(fd, off, SEEK_SET);
     rc = write(fd, buf, len);
     rc = cb(buf, len);
+    (void)rc;
 
     return 0;
 }
@@ -203,8 +206,6 @@ int fscache_rm(int64_t id)
     int rc;
     char path[PATH_MAX + 1];
     char relpath[PATH_MAX + 1];
-    const char *tmp;
-    char *slash;
 
     memset(path, 0, (PATH_MAX + 1) * sizeof(char));
     memset(relpath, 0, (PATH_MAX + 1) * sizeof(char));
@@ -236,6 +237,7 @@ int fscache_size(int fd, size_t *sz)
 static void *fscache_run(void *opaque)
 {
     (void)opaque;
+    return NULL;
 }
 
 static void fscache_update(const char *rel)
@@ -245,7 +247,6 @@ static void fscache_update(const char *rel)
     char *slash;
     const char *tmp;
     struct stat st;
-    FILE *f;
 
     /* create cache dirs if not exist */
     memset(path, 0, (PATH_MAX + 1) * sizeof(char));

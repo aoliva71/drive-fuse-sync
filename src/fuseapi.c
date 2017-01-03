@@ -13,6 +13,7 @@
 #include <fuse_lowlevel.h>
 
 #include "dbcache.h"
+#include "fscache.h"
 
 #include <stdarg.h>
 #define LOG(...) printf(__VA_ARGS__); printf("\n")
@@ -36,6 +37,12 @@ static void fuseapi_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
             int sync, int refcount, const char *checksum, int64_t parent) {
+        (void)uuid;
+        (void)name;
+        (void)sync;
+        (void)refcount;
+        (void)checksum;
+        (void)parent;
         e.ino = id;
         e.attr_timeout = 1.0;
         e.entry_timeout = 1.0;
@@ -89,7 +96,7 @@ static void fuseapi_getattr(fuse_req_t req, fuse_ino_t ino,
     int rc;
     struct stat st;
 
-    LOG("fuseapi_getattr: %lld", ino);
+    LOG("fuseapi_getattr: %lld", (long long int)ino);
     (void)fi;
 
     memset(&st, 0, sizeof(struct stat));
@@ -97,6 +104,12 @@ static void fuseapi_getattr(fuse_req_t req, fuse_ino_t ino,
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
             int sync, int refcount, const char *checksum, int64_t parent) {
+        (void)uuid;
+        (void)name;
+        (void)sync;
+        (void)refcount;
+        (void)checksum;
+        (void)parent;
         st.st_ino = id;
         st.st_mode = mode;
         switch(type) {
@@ -145,7 +158,7 @@ static void fuseapi_setattr(fuse_req_t req, fuse_ino_t ino,
     struct timespec tv;
     struct stat st;
 
-    LOG("fuseapi_setattr: %lld", ino);
+    LOG("fuseapi_setattr: %lld", (long long int)ino);
     (void)fi;
 
     rc = -1;
@@ -191,6 +204,13 @@ static void fuseapi_setattr(fuse_req_t req, fuse_ino_t ino,
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
             int sync, int refcount, const char *checksum, int64_t parent) {
+        (void)uuid;
+        (void)name;
+        (void)sync;
+        (void)refcount;
+        (void)checksum;
+        (void)parent;
+
         st.st_ino = id;
         st.st_mode = mode;
         switch(type) {
@@ -237,11 +257,10 @@ static void fuseapi_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
 {
     int rc;
     int64_t id;
-    int fd;
     struct fuse_entry_param e;
     struct timespec tv;
 
-    LOG("fuseapi_mkdir: %lld, %s", parent, name);
+    LOG("fuseapi_mkdir: %lld, %s", (long long int)parent, name);
 
     rc = dbcache_createdir(&id, "ffffffff-ffff-ffff-ffff-ffffffffffff", name,
             mode, 1, "@", parent);
@@ -283,14 +302,27 @@ static void fuseapi_unlink(fuse_req_t req, fuse_ino_t parent, const char *name)
 {
     int rc;
 
-    LOG("fuseapi_unlink: %lld, %s", parent, name);
+    LOG("fuseapi_unlink: %lld, %s", (long long int)parent, name);
     int rmcb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
             int sync, int refcount, const char *checksum, int64_t parent) {
+        (void)uuid;
+        (void)name;
+        (void)type;
+        (void)size;
+        (void)mode;
+        (void)atime;
+        (void)mtime;
+        (void)ctime;
+        (void)sync;
+        (void)checksum;
+        (void)parent;
         if(0 == refcount) {
             fscache_rm(id);
         }
+
+        return 0;
     }
     rc = dbcache_rm(name, parent, rmcb);
     if(0 == rc) {
@@ -305,14 +337,27 @@ static void fuseapi_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name)
 {
     int rc;
 
-    LOG("fuseapi_rmdir: %lld, %s", parent, name);
+    LOG("fuseapi_rmdir: %lld, %s", (long long int)parent, name);
     int rmdircb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
             int sync, int refcount, const char *checksum, int64_t parent) {
+        (void)uuid;
+        (void)name;
+        (void)type;
+        (void)size;
+        (void)mode;
+        (void)atime;
+        (void)mtime;
+        (void)ctime;
+        (void)sync;
+        (void)checksum;
+        (void)parent;
+
         if(0 == refcount) {
             fscache_rmdir(id);
         }
+        return 0;
     }
     rc = dbcache_rmdir(name, parent, rmdircb);
     if(0 == rc) {
@@ -329,7 +374,7 @@ static void fuseapi_open(fuse_req_t req, fuse_ino_t ino,
     int rc;
     int fd;
 
-    LOG("fuseapi_open: %lld", ino);
+    LOG("fuseapi_open: %lld", (long long int)ino);
 
     dbcache_addref(ino);
 
@@ -349,11 +394,11 @@ static void fuseapi_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 
     (void) fi;
 
-    LOG("fuseapi_read: %lld", ino);
+    LOG("fuseapi_read: %lld", (long long int)ino);
 
     int readcb(const void *data, size_t len)
     {
-        LOG("calling fuse_reply_buf(%p, %p, %lld);", req, data, len);
+        LOG("calling fuse_reply_buf(%p, %p, %lld);", req, data, (long long int)len);
         fuse_reply_buf(req, data, len);
         return 0;
     }
@@ -369,11 +414,12 @@ static void fuseapi_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 {
     int rc;
 
-    LOG("fuseapi_write: %lld", ino);
+    LOG("fuseapi_write: %lld", (long long int)ino);
 
     int writecb(const void *data, size_t len)
     {
         (void)data;
+        (void)len;
         fuse_reply_write(req, size);
         return 0;
     }
@@ -390,7 +436,7 @@ static void fuseapi_release(fuse_req_t req, fuse_ino_t ino,
     int rc;
     size_t size;
 
-    LOG("fuseapi_release: %lld", ino);
+    LOG("fuseapi_release: %lld", (long long int)ino);
 
     dbcache_rmref(ino);
 
@@ -419,7 +465,7 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
     size_t len;
     int err;
 
-    LOG("fuseapi_readdir - ino: %lld, size: %lld, off: %lld", ino, sz, off);
+    LOG("fuseapi_readdir - ino: %lld, size: %lld, off: %lld", (long long int)ino, (long long int)sz, (long long int)off);
     (void)fi;
 
     if(sz > RDDIRBUF_SIZE) {
@@ -432,6 +478,13 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
             int sync, int refcount, const char *checksum, int64_t parent) {
+
+        (void)uuid;
+        (void)sync;
+        (void)refcount;
+        (void)checksum;
+        (void)parent;
+
         memset(buf, 0, RDDIRBUF_SIZE * sizeof(uint8_t));
         if(0 == off) {
             memset(&st, 0, sizeof(struct stat));
@@ -455,10 +508,11 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
             memcpy(&st.st_atim, atime, sizeof(struct timespec));
             memcpy(&st.st_mtim, mtime, sizeof(struct timespec));
             memcpy(&st.st_ctim, ctime, sizeof(struct timespec));
-            blen = fuse_add_direntry(req, buf, sz, ".", &st, 1);
+            blen = fuse_add_direntry(req, (char *)buf, sz, ".", &st, 1);
             len += blen;
             sz -= blen;
-            blen = fuse_add_direntry(req, buf + len, sz, "..", &st, 1);
+            blen = fuse_add_direntry(req, (char *)(buf + len), sz, "..", &st,
+                    1);
             len += blen;
             sz -= blen;
         }
@@ -494,9 +548,10 @@ static void fuseapi_readdir(fuse_req_t req, fuse_ino_t ino, size_t sz,
         memcpy(&st.st_mtim, mtime, sizeof(struct timespec));
         memcpy(&st.st_ctim, ctime, sizeof(struct timespec));
 
-        blen = fuse_add_direntry(req, buf + len, sz, name, &st, id);
+        blen = fuse_add_direntry(req, (char *)(buf + len), sz, name, &st,
+                id);
         len += blen;
-        fuse_reply_buf(req, buf, len);
+        fuse_reply_buf(req, (const char *)buf, len);
 
         return 0;
     }
@@ -521,7 +576,7 @@ static void fuseapi_create(fuse_req_t req, fuse_ino_t parent, const char *name,
     struct fuse_entry_param e;
     struct timespec tv;
 
-    LOG("fuseapi_create: %lld, %s", parent, name);
+    LOG("fuseapi_create: %lld, %s", (long long int)parent, name);
 
     rc = dbcache_createfile(&id, "ffffffff-ffff-ffff-ffff-ffffffffffff", name,
             0, mode, 1, "@", parent);
@@ -567,7 +622,7 @@ static void fuseapi_flush(fuse_req_t req, fuse_ino_t ino,
     (void)ino;
     (void)fi;
 
-    LOG("fuseapi_flush: %lld", ino);
+    LOG("fuseapi_flush: %lld", (long long int)ino);
     // nothing to be done
 }
 
@@ -587,7 +642,7 @@ static struct fuse_lowlevel_ops fapi_ll_ops = {
     .open = fuseapi_open,
     .read = fuseapi_read,
     .write = fuseapi_write,
-//    .flush = fuseapi_flush,
+    .flush = fuseapi_flush,
     .release = fuseapi_release,
 //    .fsync = fuseapi_fsync,
 //    .opendir = fuseapi_opendir,
@@ -617,6 +672,8 @@ int fuse_start(const char *mountpoint)
             sizeof(struct fuse_lowlevel_ops), NULL);
     fuse_session_add_chan(fapi_fs, fapi_ch);
     pthread_create(&fapi_ft, NULL, fuseapi_thread, NULL);
+
+    return 0;
 }
 
 int fuse_stop(void)
@@ -628,12 +685,15 @@ int fuse_stop(void)
 
     /* join will keep pending :( */
     /*pthread_join(fapi_ft, NULL);*/
+
+    return 0;
 }
 
 static void *fuseapi_thread(void *opaque)
 {
     (void)opaque;
     fuse_session_loop(fapi_fs);
+    return NULL;
 }
 
 #undef LOG
