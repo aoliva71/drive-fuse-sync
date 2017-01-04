@@ -150,8 +150,8 @@ int dbcache_setup(void)
     sqlite3_exec(sql, "UPDATE dfs_inode SET refcount = 0 ", NULL, NULL, NULL);
 
     /* tokens */
-    sqlite3_prepare_v2(sql, "UPDATE dfs_token SET token_type = ? "
-        "access_token = ? refresh_token = ? expires_in = ? ts = ?",
+    sqlite3_prepare_v2(sql, "UPDATE dfs_token SET token_type = ?, "
+        "access_token = ?, refresh_token = ?, expires_in = ?, ts = ?",
         -1, &tupdate, NULL);
 
     sqlite3_prepare_v2(sql, "SELECT token_type, access_token, refresh_token, "
@@ -251,7 +251,7 @@ int dbcache_auth_store(const char *token_type, const char *access_token,
     rc = sqlite3_bind_int(tupdate, 4, expires_in);
     itmp = (int)*expiration_time;
     rc = sqlite3_bind_int(tupdate, 5, itmp);
-    rc = sqlite3_step(iinsert);
+    rc = sqlite3_step(tupdate);
 
     return SQLITE_DONE == rc ? 0 : -1;
 }
