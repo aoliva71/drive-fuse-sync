@@ -223,15 +223,15 @@ int dbcache_auth_load(char *token_type, size_t ttlen, char *access_token,
     if(rc != SQLITE_ROW) {
         return -1;
     }
-    ctmp = (const char *)sqlite3_column_text(tselect, 1);
+    ctmp = (const char *)sqlite3_column_text(tselect, 0);
     strncpy(token_type, ctmp, ttlen);
-    ctmp = (const char *)sqlite3_column_text(tselect, 2);
+    ctmp = (const char *)sqlite3_column_text(tselect, 1);
     strncpy(access_token, ctmp, atlen);
-    ctmp = (const char *)sqlite3_column_text(tselect, 3);
+    ctmp = (const char *)sqlite3_column_text(tselect, 2);
     strncpy(refresh_token, ctmp, rtlen);
-    itmp = sqlite3_column_int(tselect, 4);
+    itmp = sqlite3_column_int(tselect, 3);
     *expires_in = itmp;
-    itmp = sqlite3_column_int(tselect, 5);
+    itmp = sqlite3_column_int(tselect, 4);
     *expiration_time = (time_t)itmp;
 
     return 0;
