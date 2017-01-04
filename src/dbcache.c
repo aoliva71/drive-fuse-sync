@@ -18,6 +18,10 @@
 #include <fuse_lowlevel.h>
 
 static sqlite3 *sql = NULL;
+
+static sqlite3_stmt *tupdate = NULL;
+static sqlite3_stmt *tselect = NULL;
+
 static sqlite3_stmt *iinsert = NULL;
 static sqlite3_stmt *irename = NULL;
 static sqlite3_stmt *idelete = NULL;
@@ -109,9 +113,9 @@ int dbcache_setup(void)
             "ON dfs_inode ( parent )", NULL, NULL, NULL);
     sqlite3_exec(sql, "CREATE TABLE IF NOT EXISTS dfs_token ( "
             "id INTEGER NOT NULL PRIMARY KEY, "
-            "refresh_token TEXT NOT NULL, "
+            "token_type TEXT NOT NULL, "
             "access_token TEXT NOT NULL, "
-            "token_type TEXT NOT NULL "
+            "refresh_token TEXT NOT NULL, "
             "expires_in INTEGER NOT NULL, "
             "ts INTEGER NOT NULL "
             ")", NULL, NULL, NULL);
@@ -126,18 +130,38 @@ int dbcache_setup(void)
             "strftime('%s', 'now'), strftime('%s', 'now'), "
             "strftime('%s', 'now'), 1, 0, '@')",
             -1, &ins, NULL);
-        rc = sqlite3_bind_int(ins, 1, schemaversion);
         rc = sqlite3_step(ins);
         sqlite3_finalize(ins);
+    }
+    sqlite3_finalize(sel);
+
+    sqlite3_prepare_v2(sql, "SELECT * FROM dfs_token",
+            -1, &sel, NULL);
+    rc = sqlite3_step(sel);
+    if(SQLITE_DONE == rc) {
+        rc = sqlite3_exec(sql, "INSERT INTO dfs_token ( token_type, "
+            "access_token, refresh_token, expires_in, ts ) "
+            "VALUES ( '(invalid)', '(invalid)', '(invalid)', 0, 0 )",
+            NULL, NULL, NULL);
     }
     sqlite3_finalize(sel);
 
     /* reset refcount on mounting */
     sqlite3_exec(sql, "UPDATE dfs_inode SET refcount = 0 ", NULL, NULL, NULL);
 
+    /* tokens */
+    sqlite3_prepare_v2(sql, "UPDATE dfs_token SET token_type = ? "
+        "access_token = ? refresh_token = ? expires_in = ? ts = ?",
+        -1, &tupdate, NULL);
+
+    sqlite3_prepare_v2(sql, "SELECT token_type, access_token, refresh_token, "
+        "expires_in, ts FROM dfs_token",
+        -1, &tselect, NULL);
+
+    /* inodes */
     sqlite3_prepare_v2(sql, "INSERT INTO dfs_inode ( extid, name, "
         "type, size, mode, atime, mtime, ctime, sync, refcount, checksum, "
-        "parent ) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
+        "parent ) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ? )",
         -1, &iinsert, NULL);
 
     sqlite3_prepare_v2(sql, "UPDATE dfs_inode SET name = ? WHERE id = ? ",
@@ -185,6 +209,53 @@ int dbcache_setup(void)
 
     return 0;
 }
+
+int dbcache_auth_load(char *token_type, size_t ttlen, char *access_token,
+        size_t atlen, char *refresh_token, size_t rtlen, int *expires_in,
+        time_t *expiration_time)
+{
+    int rc;
+    const char *ctmp;
+    int itmp;
+
+    rc = sqlite3_reset(tselect);
+    rc = sqlite3_step(tselect);
+    if(rc != SQLITE_ROW) {
+        return -1;
+    }
+    ctmp = (const char *)sqlite3_column_text(tselect, 1);
+    strncpy(token_type, ctmp, ttlen);
+    ctmp = (const char *)sqlite3_column_text(tselect, 2);
+    strncpy(access_token, ctmp, atlen);
+    ctmp = (const char *)sqlite3_column_text(tselect, 3);
+    strncpy(refresh_token, ctmp, rtlen);
+    itmp = sqlite3_column_int(tselect, 4);
+    *expires_in = itmp;
+    itmp = sqlite3_column_int(tselect, 5);
+    *expiration_time = (time_t)itmp;
+
+    return 0;
+}
+
+int dbcache_auth_store(const char *token_type, const char *access_token,
+        const char *refresh_token, int expires_in,
+        const time_t *expiration_time)
+{
+    int rc;
+    int itmp;
+
+    rc = sqlite3_reset(tupdate);
+    rc = sqlite3_bind_text(tupdate, 1, token_type, -1, NULL);
+    rc = sqlite3_bind_text(tupdate, 2, access_token, -1, NULL);
+    rc = sqlite3_bind_text(tupdate, 3, refresh_token, -1, NULL);
+    rc = sqlite3_bind_int(tupdate, 4, expires_in);
+    itmp = (int)*expiration_time;
+    rc = sqlite3_bind_int(tupdate, 5, itmp);
+    rc = sqlite3_step(iinsert);
+
+    return SQLITE_DONE == rc ? 0 : -1;
+}
+
 
 int dbcache_createdir(int64_t *id, const char *extid, const char *name, mode_t mode,
         int sync, const char *checksum, int64_t parent)

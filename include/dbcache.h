@@ -15,6 +15,11 @@ int dbcache_close(void);
 
 int dbcache_setup(void);
 
+int dbcache_auth_load(char *, size_t, char *, size_t, char *, size_t, int *,
+        time_t *);
+int dbcache_auth_store(const char *, const char *, const char *, int,
+        const time_t *);
+
 int dbcache_createdir(int64_t *, const char *, const char *, mode_t, int,
         const char *, int64_t);
 int dbcache_createfile(int64_t *, const char *, const char *, size_t, mode_t,
