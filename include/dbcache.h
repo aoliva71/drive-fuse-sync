@@ -13,7 +13,7 @@ typedef int (dbcache_cb_t)(int64_t, const char *, const char *, int, size_t,
 int dbcache_open(const char *);
 int dbcache_close(void);
 
-int dbcache_updatepasswd(char *, size_t);
+int dbcache_setup(void);
 
 int dbcache_createdir(int64_t *, const char *, const char *, mode_t, int,
         const char *, int64_t);

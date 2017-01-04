@@ -51,8 +51,10 @@ int main(int argc, char *argv[])
     parse_command_line(&conf, argc, argv);
 
     if(conf.setup) {
+        dbcache_open(conf.dbfile);
+        dbcache_setup();
         drive_setup();
-        exit(0);
+        dbcache_close();
     }
 
     if(conf.daemonize) {
