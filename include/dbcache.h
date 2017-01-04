@@ -13,6 +13,7 @@ typedef int (dbcache_cb_t)(int64_t, const char *, const char *, int, size_t,
 int dbcache_open(const char *);
 int dbcache_close(void);
 
+int dbcache_setup_schema(void);
 int dbcache_setup(void);
 
 int dbcache_auth_load(char *, size_t, char *, size_t, char *, size_t, int *,

@@ -60,7 +60,7 @@ int dbcache_close(void)
     return 0;
 }
 
-int dbcache_setup(void)
+int dbcache_setup_schema(void)
 {
     int rc;
     sqlite3_stmt *sel;
@@ -124,14 +124,12 @@ int dbcache_setup(void)
             -1, &sel, NULL);
     rc = sqlite3_step(sel);
     if(SQLITE_DONE == rc) {
-        rc = sqlite3_prepare_v2(sql, "INSERT INTO dfs_inode ( extid, name, "
+        rc = sqlite3_exec(sql, "INSERT INTO dfs_inode ( extid, name, "
             "type, size, mode, atime, mtime, ctime, sync, refcount, checksum ) "
             "VALUES ( '00000000-0000-0000-0000-000000000000', '/', 1, 0, 448, "
             "strftime('%s', 'now'), strftime('%s', 'now'), "
             "strftime('%s', 'now'), 1, 0, '@')",
-            -1, &ins, NULL);
-        rc = sqlite3_step(ins);
-        sqlite3_finalize(ins);
+            NULL, NULL, NULL);
     }
     sqlite3_finalize(sel);
 
@@ -146,9 +144,11 @@ int dbcache_setup(void)
     }
     sqlite3_finalize(sel);
 
-    /* reset refcount on mounting */
-    sqlite3_exec(sql, "UPDATE dfs_inode SET refcount = 0 ", NULL, NULL, NULL);
+    return 0;
+}
 
+int dbcache_setup(void)
+{
     /* tokens */
     sqlite3_prepare_v2(sql, "UPDATE dfs_token SET token_type = ?, "
         "access_token = ?, refresh_token = ?, expires_in = ?, ts = ?",
