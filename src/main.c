@@ -53,6 +53,7 @@ int main(int argc, char *argv[])
     if(conf.setup) {
         dbcache_open(conf.dbfile);
         dbcache_setup_schema();
+        dbcache_setup();
         drive_setup();
         dbcache_close();
     }
@@ -74,7 +75,9 @@ int main(int argc, char *argv[])
     fscache_start(conf.cachedir);
 
     dbcache_open(conf.dbfile);
-    dbcache_setup();
+    if(!conf.setup) {
+        dbcache_setup();
+    }
 
     /*
     dbcache_createdir(&parent, "0000000a-000a-000a-000a-00000000000a",

@@ -49,7 +49,7 @@ int drive_setup(void)
             "response_type=code&"
             "redirect_uri=urn:ietf:wg:oauth:2.0:oob&"
             "access_type=offline&"
-            "scope=https%%3A%%2F%%2Fwww.googleapis.com%%2Fauth%%2Fdrive.metadata.readonly");
+            "scope=https%%3A%%2F%%2Fwww.googleapis.com%%2Fauth%%2Fdrive");
 
     printf("open a browser and go here: %s\n", data);
 
@@ -220,7 +220,7 @@ static int authorize(const char *grant_type, const char *key, const char *token)
         memset(data, 0, (DATA_MAX + 1) * sizeof(char));
         snprintf(data, DATA_MAX,
                 "scope=https%%3A%%2F%%2Fwww.googleapis.com%%2Fauth%%2F"
-                "drive.metadata.readonly&"
+                "drive&"
                 "grant_type=%s&"
                 "client_id=429614641440-42ueklua1v9vnhpacs5ml9h68hh6bv1c."
                 "apps.googleusercontent.com&"
