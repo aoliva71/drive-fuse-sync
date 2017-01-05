@@ -108,8 +108,29 @@ int drive_stop(void)
 static void *drive_run(void *opaque)
 {
     time_t now;
+    CURL *curl;
+    CURLcode rc;
+    struct curl_slist *chunk;
+#define AUTH_MAX    127
+    char auth[AUTH_MAX + 1];
 
     (void)opaque;
+
+    size_t writecb(void *ptr, size_t size, size_t n, void *stream)
+    {
+        char *ch;
+        int i;
+        size_t len;
+
+        ch = (char *)ptr;
+        len = size * n;
+        for(i = 0; i < (int)len; i++) {
+            putchar(*ch);
+            ch++;
+        }
+
+        return len;
+    }
 
     while(keep_running) {
         dbcache_auth_load(token_type, TOKENTYPE_MAX, access_token, TOKEN_MAX,
@@ -122,6 +143,20 @@ static void *drive_run(void *opaque)
         }
 
         /* load all files */
+        curl = curl_easy_init();
+        if(curl) {
+            rc = curl_easy_setopt(curl, CURLOPT_URL,
+                    "https://www.googleapis.com/drive/v3/files");
+            chunk = NULL;
+            memset(auth, 0, (AUTH_MAX + 1) * sizeof(char));
+            snprintf(auth, AUTH_MAX, "Authorization: %s %s", token_type,
+                                access_token);
+            chunk = curl_slist_append(chunk, auth);
+            rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
+            rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writecb);
+            rc = curl_easy_perform(curl);
+            curl_easy_cleanup(curl);
+        }
 
         /* query changes - wait until expires_in / 10 elapses */
 
@@ -142,6 +177,7 @@ static int refresh_tokens(void)
 {
     char token[TOKEN_MAX + 1];
     memset(token, 0, (TOKEN_MAX + 1) * sizeof(char));
+    strncpy(token, refresh_token, TOKEN_MAX);
     return authorize("refresh_token", "refresh_token", token);
 }
 
