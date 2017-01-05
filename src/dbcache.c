@@ -22,6 +22,11 @@ static sqlite3 *sql = NULL;
 static sqlite3_stmt *tupdate = NULL;
 static sqlite3_stmt *tselect = NULL;
 
+static sqlite3_stmt *cselectall = NULL;
+static sqlite3_stmt *cselect = NULL;
+static sqlite3_stmt *cinsert = NULL;
+static sqlite3_stmt *cupdate = NULL;
+
 static sqlite3_stmt *iinsert = NULL;
 static sqlite3_stmt *irename = NULL;
 static sqlite3_stmt *idelete = NULL;
@@ -119,6 +124,15 @@ int dbcache_setup_schema(void)
             "expires_in INTEGER NOT NULL, "
             "ts INTEGER NOT NULL "
             ")", NULL, NULL, NULL);
+    sqlite3_exec(sql, "CREATE TABLE IF NOT EXISTS dfs_cache ( "
+            "id INTEGER NOT NULL PRIMARY KEY, "
+            "file_id TEXT NOT NULL, "
+            "state INTEGER NOT NULL "
+            ")", NULL, NULL, NULL);
+    sqlite3_exec(sql, "CREATE INDEX IF NOT EXISTS dfs_cache_fileid "
+            "ON dfs_cache ( file_id )", NULL, NULL, NULL);
+    sqlite3_exec(sql, "CREATE INDEX IF NOT EXISTS dfs_cache_state "
+            "ON dfs_cache ( state )", NULL, NULL, NULL);
 
     sqlite3_prepare_v2(sql, "SELECT extid FROM dfs_inode WHERE parent IS NULL",
             -1, &sel, NULL);
@@ -157,6 +171,23 @@ int dbcache_setup(void)
     sqlite3_prepare_v2(sql, "SELECT token_type, access_token, refresh_token, "
         "expires_in, ts FROM dfs_token",
         -1, &tselect, NULL);
+
+    /* cache */
+    sqlite3_prepare_v2(sql, "SELECT id, file_id, state FROM dfs_cache",
+        -1, &cselectall, NULL);
+
+    sqlite3_prepare_v2(sql, "SELECT id, state FROM dfs_cache WHERE file_id = ?",
+        -1, &cselect, NULL);
+
+    sqlite3_prepare_v2(sql, "INSERT INTO dfs_cache ( file_id, state ) VALUES "
+        "(?, 0)",
+        -1, &cinsert, NULL);
+    
+    sqlite3_prepare_v2(sql, "UPDATE dfs_cache SET state = ? WHERE file_id = ?",
+        -1, &cupdate, NULL);
+
+    /* empty cache */
+    sqlite3_exec(sql, "DELETE FROM dfs_cache", NULL, NULL, NULL);
 
     /* inodes */
     sqlite3_prepare_v2(sql, "INSERT INTO dfs_inode ( extid, name, "
@@ -207,6 +238,10 @@ int dbcache_setup(void)
         "WHERE id = ? ",
         -1, &irmref, NULL);
 
+    /* reset refcount */
+    sqlite3_exec(sql, "UPDATE dfs_inode SET refcount = 0",
+        NULL, NULL, NULL);
+
     return 0;
 }
 
@@ -256,6 +291,60 @@ int dbcache_auth_store(const char *token_type, const char *access_token,
     return SQLITE_DONE == rc ? 0 : -1;
 }
 
+int dbcache_cachefileid(const char *file_id)
+{
+    int rc;
+
+    rc = sqlite3_reset(cselect);
+    rc = sqlite3_bind_text(cselect, 1, file_id, -1, NULL);
+    rc = sqlite3_step(cselect);
+    if(SQLITE_ROW == rc) {
+        /* reset state */
+        rc = sqlite3_reset(cupdate);
+        rc = sqlite3_bind_int(cupdate, 1, 0);
+        rc = sqlite3_bind_text(cupdate, 2, file_id, -1, NULL);
+        rc = sqlite3_step(cupdate);
+        return SQLITE_DONE == rc ? 0 : -1;
+    } else if(SQLITE_DONE == rc) {
+        /* insert */
+        rc = sqlite3_reset(cinsert);
+        rc = sqlite3_bind_text(cinsert, 1, file_id, -1, NULL);
+        rc = sqlite3_step(cinsert);
+        return SQLITE_DONE == rc ? 0 : -1;
+    } else {
+        return -1;
+    }
+}
+
+int dbcache_cachefiles(dbcache_statecb_t *cb)
+{
+    int rc;
+    sqlite3_int64 id;
+    const char *fid;
+    int state;
+
+    rc = sqlite3_reset(cselectall);
+    for(;;) {
+        rc = sqlite3_step(cselectall);
+        if(SQLITE_ROW == rc) {
+            id = sqlite3_column_int64(cselectall, 0);
+            fid = (const char *)sqlite3_column_text(cselectall, 1);
+            state = sqlite3_column_int(cselectall, 2);
+
+            rc = cb((int64_t)id, fid, state);
+            if(rc != 0) {
+                return -1;
+            }
+        } else if(SQLITE_DONE == rc) {
+            break;
+        } else {
+            return -1;
+        }
+    }
+
+    return 0;
+ 
+}
 
 int dbcache_createdir(int64_t *id, const char *extid, const char *name, mode_t mode,
         int sync, const char *checksum, int64_t parent)

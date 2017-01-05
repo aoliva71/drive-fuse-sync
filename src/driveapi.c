@@ -49,7 +49,8 @@ int drive_setup(void)
             "response_type=code&"
             "redirect_uri=urn:ietf:wg:oauth:2.0:oob&"
             "access_type=offline&"
-            "scope=https%%3A%%2F%%2Fwww.googleapis.com%%2Fauth%%2Fdrive");
+            "scope=https%%3A%%2F%%2Fwww.googleapis.com%%2Fauth%%2Fdrive+"
+            "https%%3A%%2F%%2Fwww.googleapis.com%%2Fauth%%2Fdrive.metadata");
 
     printf("open a browser and go here: %s\n", data);
 
@@ -113,24 +114,51 @@ static void *drive_run(void *opaque)
     struct curl_slist *chunk;
 #define AUTH_MAX    127
     char auth[AUTH_MAX + 1];
+    FILE *tmp;
+#define LINEBUF_MAX    255
+    char linebuf[LINEBUF_MAX + 1];
+    char *line;
+    char *end;
+#define FILEURL_MAX     255
+    char fileurl[FILEURL_MAX + 1];
 
-    (void)opaque;
+#define DATA_MAX    511
+    char data[DATA_MAX + 1];
 
     size_t writecb(void *ptr, size_t size, size_t n, void *stream)
     {
-        char *ch;
-        int i;
         size_t len;
 
-        ch = (char *)ptr;
         len = size * n;
-        for(i = 0; i < (int)len; i++) {
-            putchar(*ch);
-            ch++;
+        if(len > DATA_MAX) {
+            len = DATA_MAX;
         }
+        memcpy(stream, ptr, len);
 
         return len;
     }
+
+    int cachecb(int64_t id, const char *fid, int state)
+    {
+        memset(fileurl, 0, (FILEURL_MAX + 1) * sizeof(char));
+        snprintf(fileurl, FILEURL_MAX,
+            "https://www.googleapis.com/drive/v3/files/%s?"
+            "fields=name,mimeType,size,md5Checksum,parents", fid);
+        printf("%s - %s\n", fid, fileurl);
+        rc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
+        rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
+        rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writecb);
+        memset(data, 0, (DATA_MAX + 1) * sizeof(char));
+        rc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, data);
+        rc = curl_easy_perform(curl);
+        if(CURLE_OK == rc) {
+            printf("%s\n", data);
+        }
+        
+        return 0;
+    }
+
+    (void)opaque;
 
     while(keep_running) {
         dbcache_auth_load(token_type, TOKENTYPE_MAX, access_token, TOKEN_MAX,
@@ -143,23 +171,57 @@ static void *drive_run(void *opaque)
         }
 
         /* load all files */
+        tmp = tmpfile();
+        if(tmp) {
+            curl = curl_easy_init();
+            if(curl) {
+                rc = curl_easy_setopt(curl, CURLOPT_URL,
+                        "https://www.googleapis.com/drive/v3/files?trashed=false");
+                chunk = NULL;
+                memset(auth, 0, (AUTH_MAX + 1) * sizeof(char));
+                snprintf(auth, AUTH_MAX, "Authorization: %s %s", token_type,
+                        access_token);
+                chunk = curl_slist_append(chunk, auth);
+                rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
+                rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite);
+                rc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, tmp);
+                rc = curl_easy_perform(curl);
+                curl_easy_cleanup(curl);
+            }
+
+            fflush(tmp);
+            /* no real need for a full json parser, just go for lines like:
+               "id": "2T65Ks-tHyNP_3bPdE4wgkHlKQIDqz586I", */
+            rewind(tmp);
+            memset(linebuf, 0, (LINEBUF_MAX + 1) * sizeof(char));
+            while((line = fgets(linebuf, LINEBUF_MAX, tmp))) {
+                if(strncmp(line, "   \"id\": \"", 10)) {
+                    continue;
+                }
+                line += 10;
+                end = strchr(line, '"');
+                if(end) {
+                    *end = 0;
+                    dbcache_cachefileid(line);
+                }
+            }
+            fclose(tmp);
+        }
+
         curl = curl_easy_init();
         if(curl) {
-            rc = curl_easy_setopt(curl, CURLOPT_URL,
-                    "https://www.googleapis.com/drive/v3/files");
             chunk = NULL;
             memset(auth, 0, (AUTH_MAX + 1) * sizeof(char));
             snprintf(auth, AUTH_MAX, "Authorization: %s %s", token_type,
-                                access_token);
+                    access_token);
             chunk = curl_slist_append(chunk, auth);
-            rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
-            rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writecb);
-            rc = curl_easy_perform(curl);
+            dbcache_cachefiles(cachecb);
             curl_easy_cleanup(curl);
         }
 
         /* query changes - wait until expires_in / 10 elapses */
 
+        while(keep_running)
         sleep(1);
     }
 
@@ -219,8 +281,10 @@ static int authorize(const char *grant_type, const char *key, const char *token)
         (void)rc;
         memset(data, 0, (DATA_MAX + 1) * sizeof(char));
         snprintf(data, DATA_MAX,
-                "scope=https%%3A%%2F%%2Fwww.googleapis.com%%2Fauth%%2F"
-                "drive&"
+                "scope="
+                "https%%3A%%2F%%2Fwww.googleapis.com%%2Fauth%%2Fdrive+"
+                "https%%3A%%2F%%2Fwww.googleapis.com%%2Fauth%%2Fdrive."
+                "metadata&"
                 "grant_type=%s&"
                 "client_id=429614641440-42ueklua1v9vnhpacs5ml9h68hh6bv1c."
                 "apps.googleusercontent.com&"

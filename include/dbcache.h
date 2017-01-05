@@ -9,6 +9,7 @@
 typedef int (dbcache_cb_t)(int64_t, const char *, const char *, int, size_t,
         mode_t, const struct timespec *, const struct timespec *,
         const struct timespec *, int, int, const char *, int64_t);
+typedef int (dbcache_statecb_t)(int64_t, const char *, int);
 
 int dbcache_open(const char *);
 int dbcache_close(void);
@@ -20,6 +21,9 @@ int dbcache_auth_load(char *, size_t, char *, size_t, char *, size_t, int *,
         time_t *);
 int dbcache_auth_store(const char *, const char *, const char *, int,
         const time_t *);
+
+int dbcache_cachefileid(const char *);
+int dbcache_cachefiles(dbcache_statecb_t *);
 
 int dbcache_createdir(int64_t *, const char *, const char *, mode_t, int,
         const char *, int64_t);
