@@ -49,8 +49,7 @@ int drive_setup(void)
             "response_type=code&"
             "redirect_uri=urn:ietf:wg:oauth:2.0:oob&"
             "access_type=offline&"
-            "scope=https%%3A%%2F%%2Fwww.googleapis.com%%2Fauth%%2Fdrive+"
-            "https%%3A%%2F%%2Fwww.googleapis.com%%2Fauth%%2Fdrive.metadata");
+            "scope=https%%3A%%2F%%2Fwww.googleapis.com%%2Fauth%%2Fdrive");
 
     printf("open a browser and go here: %s\n", data);
 
@@ -143,7 +142,8 @@ static void *drive_run(void *opaque)
         memset(fileurl, 0, (FILEURL_MAX + 1) * sizeof(char));
         snprintf(fileurl, FILEURL_MAX,
             "https://www.googleapis.com/drive/v3/files/%s?"
-            "fields=name,mimeType,size,md5Checksum,parents", fid);
+            "fields=id,name,mimeType,size,"
+            "modifiedTime,createdTime,md5Checksum,parents", fid);
         printf("%s - %s\n", fid, fileurl);
         rc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
         rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
@@ -176,7 +176,7 @@ static void *drive_run(void *opaque)
             curl = curl_easy_init();
             if(curl) {
                 rc = curl_easy_setopt(curl, CURLOPT_URL,
-                        "https://www.googleapis.com/drive/v3/files?trashed=false");
+                        "https://www.googleapis.com/drive/v3/files");
                 chunk = NULL;
                 memset(auth, 0, (AUTH_MAX + 1) * sizeof(char));
                 snprintf(auth, AUTH_MAX, "Authorization: %s %s", token_type,
@@ -190,6 +190,8 @@ static void *drive_run(void *opaque)
             }
 
             fflush(tmp);
+
+            dbcache_cachefileid("root");
             /* no real need for a full json parser, just go for lines like:
                "id": "2T65Ks-tHyNP_3bPdE4wgkHlKQIDqz586I", */
             rewind(tmp);
@@ -282,9 +284,7 @@ static int authorize(const char *grant_type, const char *key, const char *token)
         memset(data, 0, (DATA_MAX + 1) * sizeof(char));
         snprintf(data, DATA_MAX,
                 "scope="
-                "https%%3A%%2F%%2Fwww.googleapis.com%%2Fauth%%2Fdrive+"
-                "https%%3A%%2F%%2Fwww.googleapis.com%%2Fauth%%2Fdrive."
-                "metadata&"
+                "https%%3A%%2F%%2Fwww.googleapis.com%%2Fauth%%2Fdrive&"
                 "grant_type=%s&"
                 "client_id=429614641440-42ueklua1v9vnhpacs5ml9h68hh6bv1c."
                 "apps.googleusercontent.com&"
