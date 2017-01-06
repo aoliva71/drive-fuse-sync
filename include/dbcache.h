@@ -25,6 +25,10 @@ int dbcache_auth_store(const char *, const char *, const char *, int,
 int dbcache_cachefileid(const char *);
 int dbcache_cachefiles(dbcache_statecb_t *);
 
+int dbcache_update(const char *, const char *, int, int64_t,
+                const struct timespec *, const struct timespec *, int64_t,
+                const char *, const char *);
+
 int dbcache_createdir(int64_t *, const char *, const char *, mode_t, int,
         const char *, int64_t);
 int dbcache_createfile(int64_t *, const char *, const char *, size_t, mode_t,

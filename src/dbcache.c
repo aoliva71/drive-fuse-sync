@@ -27,6 +27,9 @@ static sqlite3_stmt *cselect = NULL;
 static sqlite3_stmt *cinsert = NULL;
 static sqlite3_stmt *cupdate = NULL;
 
+static sqlite3_stmt *dpinpoint = NULL;
+static sqlite3_stmt *dupdate = NULL;
+
 static sqlite3_stmt *iinsert = NULL;
 static sqlite3_stmt *irename = NULL;
 static sqlite3_stmt *idelete = NULL;
@@ -114,6 +117,8 @@ int dbcache_setup_schema(void)
             "FOREIGN KEY ( parent ) REFERENCES dfs_inode ( id ) "
             "ON DELETE CASCADE "
             ")", NULL, NULL, NULL);
+    sqlite3_exec(sql, "CREATE INDEX IF NOT EXISTS dfs_inode_extid "
+            "ON dfs_inode ( extid )", NULL, NULL, NULL);
     sqlite3_exec(sql, "CREATE INDEX IF NOT EXISTS dfs_inode_parent "
             "ON dfs_inode ( parent )", NULL, NULL, NULL);
     sqlite3_exec(sql, "CREATE TABLE IF NOT EXISTS dfs_token ( "
@@ -188,6 +193,15 @@ int dbcache_setup(void)
 
     /* empty cache */
     sqlite3_exec(sql, "DELETE FROM dfs_cache", NULL, NULL, NULL);
+
+    /* drive */
+    sqlite3_prepare_v2(sql, "SELECT id, name, type, size, mode, "
+        "atime, mtime, ctime, sync, refcount, checksum, parent "
+        "FROM dfs_inode WHERE extid = ?", -1, &dpinpoint,
+        NULL);
+
+    sqlite3_prepare_v2(sql, "UPDATE dfs_inode SET extid = ?, parent = ? "
+        "WHERE id = ?", -1, &dupdate, NULL);
 
     /* inodes */
     sqlite3_prepare_v2(sql, "INSERT INTO dfs_inode ( extid, name, "
@@ -344,6 +358,50 @@ int dbcache_cachefiles(dbcache_statecb_t *cb)
 
     return 0;
  
+}
+
+int dbcache_update(const char *extid, const char *name, int isdir, int64_t size,
+                const struct timespec *mtime, const struct timespec *ctime,
+                int64_t version, const char *cksum, const char *parent)
+{
+    int rc;
+    int64_t id;
+    int64_t parentid;
+
+    if(strlen(parent)) {
+        rc = sqlite3_reset(dpinpoint);
+        rc = sqlite3_bind_text(dpinpoint, 1, extid, -1, NULL);
+        rc = sqlite3_step(dpinpoint);
+        if(rc != SQLITE_ROW) {
+            return -1;
+        }
+        id = (int64_t)sqlite3_column_int64(dpinpoint, 0);
+
+        rc = sqlite3_reset(dpinpoint);
+        rc = sqlite3_bind_text(dpinpoint, 1, parent, -1, NULL);
+        rc = sqlite3_step(dpinpoint);
+        if(rc != SQLITE_ROW) {
+            return -1;
+        }
+        parentid = (int64_t)sqlite3_column_int64(dpinpoint, 0);
+
+        rc = sqlite3_reset(dupdate);
+        rc = sqlite3_bind_text(dupdate, 1, extid, -1, NULL);
+        rc = sqlite3_bind_int64(dupdate, 2, (sqlite3_int64)parentid);
+        rc = sqlite3_bind_int64(dupdate, 3, (sqlite3_int64)id);
+        rc = sqlite3_step(dupdate);
+        return SQLITE_DONE == rc ? 0 : -1;
+    } else {
+        /* updating root */
+        id = 1LL;
+        rc = sqlite3_reset(dupdate);
+        rc = sqlite3_bind_text(dupdate, 1, extid, -1, NULL);
+        rc = sqlite3_bind_null(dupdate, 2);
+        rc = sqlite3_bind_int64(dupdate, 3, (sqlite3_int64)id);
+        rc = sqlite3_step(dupdate);
+        return SQLITE_DONE == rc ? 0 : -1;
+    }
+    return 0;
 }
 
 int dbcache_createdir(int64_t *id, const char *extid, const char *name, mode_t mode,

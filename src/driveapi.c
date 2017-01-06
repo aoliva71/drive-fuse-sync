@@ -62,8 +62,6 @@ int drive_setup(void)
         switch(code[i]) {
         case '\r':
         case '\n':
-        case '\t':
-        case ' ':
             code[i] = 0;
             break;
         }
@@ -148,12 +146,14 @@ static void *drive_run(void *opaque)
 #define DMIME_MAX       63
         char mime[DMIME_MAX + 1];
         int isdir;
+        int exclude;
         int64_t size;
 #define DTIME_MAX       31
         char mtimes[DTIME_MAX + 1];
         char ctimes[DTIME_MAX + 1];
-        struct timeval mtime;
-        struct timeval ctime;
+        struct timespec mtime;
+        struct timespec ctime;
+        int64_t version;
 #define DCKSUM_MAX      63
         char cksum[DCKSUM_MAX + 1];
         int pn;
@@ -169,11 +169,13 @@ static void *drive_run(void *opaque)
         memset(name, 0, (DNAME_MAX + 1) * sizeof(char));
         memset(mime, 0, (DMIME_MAX + 1) * sizeof(char));
         isdir = 0;
+        exclude = 0;
         size = 0LL;
         memset(mtimes, 0, (DTIME_MAX + 1) * sizeof(char));
         memset(ctimes, 0, (DTIME_MAX + 1) * sizeof(char));
         memset(&mtime, 0, sizeof(struct timeval));
         memset(&ctime, 0, sizeof(struct timeval));
+        version = 0LL;
         memset(cksum, 0, (DCKSUM_MAX + 1) * sizeof(char));
         pn = 0;
         pitem = NULL;
@@ -187,7 +189,7 @@ static void *drive_run(void *opaque)
             snprintf(fileurl, FILEURL_MAX,
                 "https://www.googleapis.com/drive/v3/files/%s?"
                 "fields=id,name,mimeType,size,"
-                "modifiedTime,createdTime,md5Checksum,parents", alias);
+                "modifiedTime,createdTime,version,md5Checksum,parents", alias);
             printf("%s - %s\n", alias, fileurl);
             rc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
             rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
@@ -196,7 +198,7 @@ static void *drive_run(void *opaque)
             rc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, data);
             rc = curl_easy_perform(curl);
             if(CURLE_OK == rc) {
-                printf("%s\n", data);
+                //printf("%s\n", data);
                 jdobj = json_tokener_parse(data);
                 if(jdobj) {
                     found = json_object_object_get_ex(jdobj, "id", &val);
@@ -216,23 +218,33 @@ static void *drive_run(void *opaque)
                         if(0 == strcmp(mime,
                                 "application/vnd.google-apps.folder")) {
                             isdir = 1;
+                        } else if(0 == strncmp(mime,
+                                "application/vnd.google-apps.", 20)) {
+                            exclude = 1;
                         }
                     }
                     found = json_object_object_get_ex(jdobj, "size", &val);
                     if(found) {
                         size = json_object_get_int64(val);
                     }
-                    found = json_object_object_get_ex(jdobj, "modifiedTime", &val);
+                    found = json_object_object_get_ex(jdobj, "modifiedTime",
+                            &val);
                     if(found) {
                         sval = json_object_get_string(val);
                         strncpy(mtimes, sval, DTIME_MAX);
                     }
-                    found = json_object_object_get_ex(jdobj, "createdTime", &val);
+                    found = json_object_object_get_ex(jdobj, "createdTime",
+                            &val);
                     if(found) {
                         sval = json_object_get_string(val);
                         strncpy(ctimes, sval, DTIME_MAX);
                     }
-                    found = json_object_object_get_ex(jdobj, "md5Checksum", &val);
+                    found = json_object_object_get_ex(jdobj, "version", &val);
+                    if(found) {
+                        version = json_object_get_int64(val);
+                    }
+                    found = json_object_object_get_ex(jdobj, "md5Checksum",
+                            &val);
                     if(found) {
                         sval = json_object_get_string(val);
                         strncpy(cksum, sval, DCKSUM_MAX);
@@ -248,18 +260,24 @@ static void *drive_run(void *opaque)
                     }
                     
                     /* insert/update entry */
-                    printf("id: %s\n", id);
+                    /*printf("id: %s\n", id);
                     printf("name: %s\n", name);
                     printf("isdir: %d\n", isdir);
                     printf("size: %lld\n", (long long int)size);
                     printf("mtime: %s\n", mtimes);
                     printf("ctime: %s\n", ctimes);
+                    printf("version: %d\n", version);
                     printf("cksum: %s\n", cksum);
                     printf("parent: %s\n", parent);
-                    printf("\n");
+                    printf("\n");*/
                 }
             }
             curl_easy_cleanup(curl);
+        }
+
+        if(!exclude) {
+            dbcache_update(id, name, isdir, size, &mtime, &ctime, version,
+                cksum, parent);
         }
 
         /* scan directory */
