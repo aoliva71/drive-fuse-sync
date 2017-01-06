@@ -108,18 +108,9 @@ int drive_stop(void)
 static void *drive_run(void *opaque)
 {
     time_t now;
-    CURL *curl;
-    CURLcode rc;
     struct curl_slist *chunk;
 #define AUTH_MAX    127
     char auth[AUTH_MAX + 1];
-    FILE *tmp;
-#define LINEBUF_MAX    255
-    char linebuf[LINEBUF_MAX + 1];
-    char *line;
-    char *end;
-#define FILEURL_MAX     255
-    char fileurl[FILEURL_MAX + 1];
 
 #define DATA_MAX    511
     char data[DATA_MAX + 1];
@@ -137,25 +128,181 @@ static void *drive_run(void *opaque)
         return len;
     }
 
-    int cachecb(int64_t id, const char *fid, int state)
+    void recurse(const char *alias)
     {
-        memset(fileurl, 0, (FILEURL_MAX + 1) * sizeof(char));
-        snprintf(fileurl, FILEURL_MAX,
-            "https://www.googleapis.com/drive/v3/files/%s?"
-            "fields=id,name,mimeType,size,"
-            "modifiedTime,createdTime,md5Checksum,parents", fid);
-        printf("%s - %s\n", fid, fileurl);
-        rc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
-        rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
-        rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writecb);
-        memset(data, 0, (DATA_MAX + 1) * sizeof(char));
-        rc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, data);
-        rc = curl_easy_perform(curl);
-        if(CURLE_OK == rc) {
-            printf("%s\n", data);
+        CURL *curl;
+        CURLcode rc;
+
+        FILE *tmp;
+#define FILEURL_MAX     255
+        char fileurl[FILEURL_MAX + 1];
+        json_object *jdobj;
+        struct json_object *val;
+        json_bool found;
+        const char *sval;
+
+#define DID_MAX         63
+        char id[DID_MAX + 1];
+#define DNAME_MAX       255
+        char name[DNAME_MAX + 1];
+#define DMIME_MAX       63
+        char mime[DMIME_MAX + 1];
+        int isdir;
+        int64_t size;
+#define DTIME_MAX       31
+        char mtimes[DTIME_MAX + 1];
+        char ctimes[DTIME_MAX + 1];
+        struct timeval mtime;
+        struct timeval ctime;
+#define DCKSUM_MAX      63
+        char cksum[DCKSUM_MAX + 1];
+        int pn;
+        struct json_object *pitem;
+        char parent[DID_MAX + 1];
+
+#define LINEBUF_MAX    255
+        char linebuf[LINEBUF_MAX + 1];
+        char *line;
+        char *end;
+
+        memset(id, 0, (DID_MAX + 1) * sizeof(char));
+        memset(name, 0, (DNAME_MAX + 1) * sizeof(char));
+        memset(mime, 0, (DMIME_MAX + 1) * sizeof(char));
+        isdir = 0;
+        size = 0LL;
+        memset(mtimes, 0, (DTIME_MAX + 1) * sizeof(char));
+        memset(ctimes, 0, (DTIME_MAX + 1) * sizeof(char));
+        memset(&mtime, 0, sizeof(struct timeval));
+        memset(&ctime, 0, sizeof(struct timeval));
+        memset(cksum, 0, (DCKSUM_MAX + 1) * sizeof(char));
+        pn = 0;
+        pitem = NULL;
+        memset(parent, 0, (DID_MAX + 1) * sizeof(char));
+        
+
+        /* query details */
+        curl = curl_easy_init();
+        if(curl) {
+            memset(fileurl, 0, (FILEURL_MAX + 1) * sizeof(char));
+            snprintf(fileurl, FILEURL_MAX,
+                "https://www.googleapis.com/drive/v3/files/%s?"
+                "fields=id,name,mimeType,size,"
+                "modifiedTime,createdTime,md5Checksum,parents", alias);
+            printf("%s - %s\n", alias, fileurl);
+            rc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
+            rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
+            rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writecb);
+            memset(data, 0, (DATA_MAX + 1) * sizeof(char));
+            rc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, data);
+            rc = curl_easy_perform(curl);
+            if(CURLE_OK == rc) {
+                printf("%s\n", data);
+                jdobj = json_tokener_parse(data);
+                if(jdobj) {
+                    found = json_object_object_get_ex(jdobj, "id", &val);
+                    if(found) {
+                        sval = json_object_get_string(val);
+                        strncpy(id, sval, DID_MAX);
+                    }
+                    found = json_object_object_get_ex(jdobj, "name", &val);
+                    if(found) {
+                        sval = json_object_get_string(val);
+                        strncpy(name, sval, DNAME_MAX);
+                    }
+                    found = json_object_object_get_ex(jdobj, "mimeType", &val);
+                    if(found) {
+                        sval = json_object_get_string(val);
+                        strncpy(mime, sval, DMIME_MAX);
+                        if(0 == strcmp(mime,
+                                "application/vnd.google-apps.folder")) {
+                            isdir = 1;
+                        }
+                    }
+                    found = json_object_object_get_ex(jdobj, "size", &val);
+                    if(found) {
+                        size = json_object_get_int64(val);
+                    }
+                    found = json_object_object_get_ex(jdobj, "modifiedTime", &val);
+                    if(found) {
+                        sval = json_object_get_string(val);
+                        strncpy(mtimes, sval, DTIME_MAX);
+                    }
+                    found = json_object_object_get_ex(jdobj, "createdTime", &val);
+                    if(found) {
+                        sval = json_object_get_string(val);
+                        strncpy(ctimes, sval, DTIME_MAX);
+                    }
+                    found = json_object_object_get_ex(jdobj, "md5Checksum", &val);
+                    if(found) {
+                        sval = json_object_get_string(val);
+                        strncpy(cksum, sval, DCKSUM_MAX);
+                    }
+                    found = json_object_object_get_ex(jdobj, "parents", &val);
+                    if(found) {
+                        pn = json_object_array_length(val);
+                        if(pn > 0) {
+                            pitem = json_object_array_get_idx(val, 0);
+                            sval = json_object_get_string(pitem);
+                            strncpy(parent, sval, DID_MAX);
+                        }
+                    }
+                    
+                    /* insert/update entry */
+                    printf("id: %s\n", id);
+                    printf("name: %s\n", name);
+                    printf("isdir: %d\n", isdir);
+                    printf("size: %lld\n", (long long int)size);
+                    printf("mtime: %s\n", mtimes);
+                    printf("ctime: %s\n", ctimes);
+                    printf("cksum: %s\n", cksum);
+                    printf("parent: %s\n", parent);
+                    printf("\n");
+                }
+            }
+            curl_easy_cleanup(curl);
+        }
+
+        /* scan directory */
+        if(isdir) {
+
+            /* load all files */
+            tmp = tmpfile();
+            if(tmp) {
+                curl = curl_easy_init();
+                if(curl) {
+                    memset(fileurl, 0, (FILEURL_MAX + 1) * sizeof(char));
+                    snprintf(fileurl, FILEURL_MAX,
+                            "https://www.googleapis.com/drive/v3/files?"
+                            "q=%%27%s%%27+in+parents", id);
+                    rc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
+                    rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
+                    rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite);
+                    rc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, tmp);
+                    rc = curl_easy_perform(curl);
+                    curl_easy_cleanup(curl);
+                }
+
+                fflush(tmp);
+
+                /* no real need for a full json parser, just go for lines like:
+                   "id": "2T65Ks-tHyNP_3bPdE4wgkHlKQIDqz586I", */
+                rewind(tmp);
+                memset(linebuf, 0, (LINEBUF_MAX + 1) * sizeof(char));
+                while((line = fgets(linebuf, LINEBUF_MAX, tmp))) {
+                    if(strncmp(line, "   \"id\": \"", 10)) {
+                        continue;
+                    }
+                    line += 10;
+                    end = strchr(line, '"');
+                    if(end) {
+                        *end = 0;
+                        recurse(line);
+                    }
+                }
+                fclose(tmp);
+            }
         }
         
-        return 0;
     }
 
     (void)opaque;
@@ -170,58 +317,19 @@ static void *drive_run(void *opaque)
                 expires_in, &expiration_time);
         }
 
-        /* load all files */
-        tmp = tmpfile();
-        if(tmp) {
-            curl = curl_easy_init();
-            if(curl) {
-                rc = curl_easy_setopt(curl, CURLOPT_URL,
-                        "https://www.googleapis.com/drive/v3/files");
-                chunk = NULL;
-                memset(auth, 0, (AUTH_MAX + 1) * sizeof(char));
-                snprintf(auth, AUTH_MAX, "Authorization: %s %s", token_type,
-                        access_token);
-                chunk = curl_slist_append(chunk, auth);
-                rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
-                rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite);
-                rc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, tmp);
-                rc = curl_easy_perform(curl);
-                curl_easy_cleanup(curl);
-            }
+        /* setup authorization */
+        chunk = NULL;
+        memset(auth, 0, (AUTH_MAX + 1) * sizeof(char));
+        snprintf(auth, AUTH_MAX, "Authorization: %s %s", token_type,
+                access_token);
+        chunk = curl_slist_append(chunk, auth);
 
-            fflush(tmp);
+        /* get a changeid */
 
-            dbcache_cachefileid("root");
-            /* no real need for a full json parser, just go for lines like:
-               "id": "2T65Ks-tHyNP_3bPdE4wgkHlKQIDqz586I", */
-            rewind(tmp);
-            memset(linebuf, 0, (LINEBUF_MAX + 1) * sizeof(char));
-            while((line = fgets(linebuf, LINEBUF_MAX, tmp))) {
-                if(strncmp(line, "   \"id\": \"", 10)) {
-                    continue;
-                }
-                line += 10;
-                end = strchr(line, '"');
-                if(end) {
-                    *end = 0;
-                    dbcache_cachefileid(line);
-                }
-            }
-            fclose(tmp);
-        }
+        /* scan drive */
+        recurse("root");
 
-        curl = curl_easy_init();
-        if(curl) {
-            chunk = NULL;
-            memset(auth, 0, (AUTH_MAX + 1) * sizeof(char));
-            snprintf(auth, AUTH_MAX, "Authorization: %s %s", token_type,
-                    access_token);
-            chunk = curl_slist_append(chunk, auth);
-            dbcache_cachefiles(cachecb);
-            curl_easy_cleanup(curl);
-        }
-
-        /* query changes - wait until expires_in / 10 elapses */
+        /* listen to changes since changeid */
 
         while(keep_running)
         sleep(1);
@@ -272,7 +380,6 @@ static int authorize(const char *grant_type, const char *key, const char *token)
 
     memset(token_type, 0, (TOKENTYPE_MAX + 1) * sizeof(char));
     memset(access_token, 0, (TOKEN_MAX + 1) * sizeof(char));
-    memset(refresh_token, 0, (TOKEN_MAX + 1) * sizeof(char));
     expires_in = 0;
     time(&expiration_time);
 
@@ -314,6 +421,7 @@ static int authorize(const char *grant_type, const char *key, const char *token)
             found = json_object_object_get_ex(jauth, "refresh_token", &val);
             if(found) {
                 sval = json_object_get_string(val);
+                memset(refresh_token, 0, (TOKEN_MAX + 1) * sizeof(char));
                 strncpy(refresh_token, sval, TOKEN_MAX);
             }
             found = json_object_object_get_ex(jauth, "expires_in", &val);
