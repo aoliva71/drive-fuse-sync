@@ -366,31 +366,70 @@ int dbcache_update(const char *extid, const char *name, int isdir, int64_t size,
 {
     int rc;
     int64_t id;
+    int type;
+    int mode;
+    double datime, dmtime, dctime;
+    int sync;
     int64_t parentid;
 
     if(strlen(parent)) {
         rc = sqlite3_reset(dpinpoint);
         rc = sqlite3_bind_text(dpinpoint, 1, extid, -1, NULL);
         rc = sqlite3_step(dpinpoint);
-        if(rc != SQLITE_ROW) {
+        if(SQLITE_ROW == rc) {
+            /* extid found, updating */
+            id = (int64_t)sqlite3_column_int64(dpinpoint, 0);
+
+            rc = sqlite3_reset(dpinpoint);
+            rc = sqlite3_bind_text(dpinpoint, 1, parent, -1, NULL);
+            rc = sqlite3_step(dpinpoint);
+            if(rc != SQLITE_ROW) {
+                return -1;
+            }
+            parentid = (int64_t)sqlite3_column_int64(dpinpoint, 0);
+
+            rc = sqlite3_reset(dupdate);
+            rc = sqlite3_bind_text(dupdate, 1, extid, -1, NULL);
+            rc = sqlite3_bind_int64(dupdate, 2, (sqlite3_int64)parentid);
+            rc = sqlite3_bind_int64(dupdate, 3, (sqlite3_int64)id);
+            rc = sqlite3_step(dupdate);
+
+            return SQLITE_DONE == rc ? 0 : -1;
+        } else if (SQLITE_DONE == rc) {
+            /* extid not found, inserting */
+            rc = sqlite3_reset(dpinpoint);
+            rc = sqlite3_bind_text(dpinpoint, 1, parent, -1, NULL);
+            rc = sqlite3_step(dpinpoint);
+            if(rc != SQLITE_ROW) {
+                return -1;
+            }
+            parentid = (int64_t)sqlite3_column_int64(dpinpoint, 0);
+
+            rc = sqlite3_reset(iinsert);
+            rc = sqlite3_bind_text(iinsert, 1, extid, -1, NULL);
+            rc = sqlite3_bind_text(iinsert, 2, name, -1, NULL);
+            type = isdir ? 1 : 2;
+            rc = sqlite3_bind_int(iinsert, 3, type);
+            rc = sqlite3_bind_int64(iinsert, 4, size);
+            mode = isdir ? 0700 : 0600;
+            rc = sqlite3_bind_int(iinsert, 5, mode);
+            ts2r(&dmtime, mtime);
+            datime = dmtime;
+            rc = sqlite3_bind_double(iinsert, 6, datime);
+            rc = sqlite3_bind_double(iinsert, 7, dmtime);
+            ts2r(&dctime, ctime);
+            rc = sqlite3_bind_double(iinsert, 8, dctime);
+            sync = 1;
+            rc = sqlite3_bind_int(iinsert, 9, sync);
+            rc = sqlite3_bind_text(iinsert, 10, cksum, -1, NULL);
+            rc = sqlite3_bind_int64(iinsert, 11, parentid);
+
+            rc = sqlite3_step(iinsert);
+
+            return SQLITE_DONE == rc ? 0 : -1;
+        } else {
             return -1;
         }
-        id = (int64_t)sqlite3_column_int64(dpinpoint, 0);
-
-        rc = sqlite3_reset(dpinpoint);
-        rc = sqlite3_bind_text(dpinpoint, 1, parent, -1, NULL);
-        rc = sqlite3_step(dpinpoint);
-        if(rc != SQLITE_ROW) {
-            return -1;
-        }
-        parentid = (int64_t)sqlite3_column_int64(dpinpoint, 0);
-
-        rc = sqlite3_reset(dupdate);
-        rc = sqlite3_bind_text(dupdate, 1, extid, -1, NULL);
-        rc = sqlite3_bind_int64(dupdate, 2, (sqlite3_int64)parentid);
-        rc = sqlite3_bind_int64(dupdate, 3, (sqlite3_int64)id);
-        rc = sqlite3_step(dupdate);
-        return SQLITE_DONE == rc ? 0 : -1;
     } else {
         /* updating root */
         id = 1LL;
