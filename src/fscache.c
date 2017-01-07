@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "dbcache.h"
+#include "driveapi.h"
 
 #include <stdarg.h>
 #define LOG(...) printf(__VA_ARGS__); printf("\n")
@@ -19,7 +20,7 @@
 static pthread_t fscache_thread;
 static void *fscache_run(void *);
 static char fscachedir[PATH_MAX + 1];
-static void fscache_update(const char *);
+static void fscache_update(const char *, int *);
 
 int fscache_start(const char *cachedir)
 {
@@ -107,7 +108,7 @@ int fscache_create(int64_t id, int *fd)
     memset(relpath, 0, (PATH_MAX + 1) * sizeof(char));
     rc = dbcache_path(id, relpath, PATH_MAX);
     if(0 == rc) {
-        fscache_update(relpath);
+        fscache_update(relpath, NULL);
         snprintf(path, PATH_MAX, "%s%s", fscachedir, relpath);
         
         *fd = creat(path, (mode_t)0600);
@@ -124,13 +125,49 @@ int fscache_open(int64_t id, int flags, int *fd)
     int rc;
     char path[PATH_MAX + 1];
     char relpath[PATH_MAX + 1];
+    int found;
+    char eid[PATH_MAX + 1];
+    FILE *f;
+
+    int cb(int64_t id, const char *extid, const char *name, int type,
+            size_t size, mode_t mode, const struct timespec *atime,
+            const struct timespec *mtime, const struct timespec *ctime,
+            int sync, int refcount, const char *checksum, int64_t parent)
+    {
+        (void)id;
+        (void)name;
+        (void)type;
+        (void)size;
+        (void)mode;
+        (void)atime;
+        (void)mtime;
+        (void)ctime;
+        (void)sync;
+        (void)refcount;
+        (void)checksum;
+        (void)parent;
+        strncpy(eid, extid, PATH_MAX);
+        return 0;
+    }
 
     memset(path, 0, (PATH_MAX + 1) * sizeof(char));
     memset(relpath, 0, (PATH_MAX + 1) * sizeof(char));
     rc = dbcache_path(id, relpath, PATH_MAX);
     if(0 == rc) {
-        fscache_update(relpath);
+        fscache_update(relpath, &found);
         snprintf(path, PATH_MAX, "%s%s", fscachedir, relpath);
+
+        if(!found) {
+            /* query extid */
+            memset(eid, 0, (PATH_MAX + 1) * sizeof(char));
+            dbcache_pinpoint(id, cb);
+            f = fopen(path, "w");
+            if(f) {
+                /* download extid */
+                drive_download(eid, f);
+                fclose(f);
+            }
+        }
 
         LOG("opening: %s", path);
         LOG("flags: %d 0x%x 0%o", flags, flags, flags);
@@ -240,7 +277,7 @@ static void *fscache_run(void *opaque)
     return NULL;
 }
 
-static void fscache_update(const char *rel)
+static void fscache_update(const char *rel, int *found)
 {
     int rc;
     char path[PATH_MAX + 1];
@@ -268,9 +305,8 @@ static void fscache_update(const char *rel)
     }
     
     rc = stat(path, &st);
-    if(rc != 0) {
-        /* file not found, downloading (doing nothing for now) */
-
+    if(found) {
+        *found = (rc != 0) ? 0 : 1;
     }
 }
 

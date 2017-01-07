@@ -103,6 +103,40 @@ int drive_stop(void)
     return 0;
 }
 
+int drive_download(const char *id, FILE *f)
+{
+    CURL *curl;
+    CURLcode rc;
+    struct curl_slist *chunk;
+#define AUTH_MAX    127
+    char auth[AUTH_MAX + 1];
+#define FILEURL_MAX     255
+        char fileurl[FILEURL_MAX + 1];
+
+    chunk = NULL;
+    memset(auth, 0, (AUTH_MAX + 1) * sizeof(char));
+    snprintf(auth, AUTH_MAX, "Authorization: %s %s", token_type,
+            access_token);
+    chunk = curl_slist_append(chunk, auth);
+
+
+    curl = curl_easy_init();
+    if(curl) {
+        memset(fileurl, 0, (FILEURL_MAX + 1) * sizeof(char));
+        snprintf(fileurl, FILEURL_MAX,
+                "https://www.googleapis.com/drive/v3/files/%s?alt=media", id);
+        rc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
+        rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
+        rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite);
+        rc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
+        rc = curl_easy_perform(curl);
+        (void)rc;
+        curl_easy_cleanup(curl);
+    }
+
+    return 0;
+}
+
 static void *drive_run(void *opaque)
 {
     time_t now;
