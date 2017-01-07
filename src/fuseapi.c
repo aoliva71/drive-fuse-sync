@@ -618,12 +618,12 @@ static void fuseapi_create(fuse_req_t req, fuse_ino_t parent, const char *name,
 static void fuseapi_flush(fuse_req_t req, fuse_ino_t ino,
               struct fuse_file_info *fi)
 {
-    (void)req;
     (void)ino;
     (void)fi;
 
     LOG("fuseapi_flush: %lld", (long long int)ino);
     // nothing to be done
+    fuse_reply_buf(req, NULL, 0);
 }
 
 static struct fuse_lowlevel_ops fapi_ll_ops = {
