@@ -31,10 +31,9 @@ static void fuseapi_getattr(const char *path, struct stat *st)
     int cb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
-            int sync, const char *checksum, int64_t parent) {
+            const char *checksum, int64_t parent) {
         (void)uuid;
         (void)name;
-        (void)sync;
         (void)refcount;
         (void)checksum;
         (void)parent;
@@ -81,7 +80,7 @@ static int fuseapi_mkdir(const char *path, mode_t mode)
     return dbcache_createdir(path, mode);
 }
 
-static void fuseapi_unlink(const char *path)
+/*static void fuseapi_unlink(const char *path)
 {
     LOG("fuseapi_unlink: %s", path);
 
@@ -104,7 +103,7 @@ static void fuseapi_unlink(const char *path)
         return fscache_rm(uuid);
     }
     return dbcache_rm(path, cb);
-}
+}*/
 
 static void fuseapi_rmdir(const char *path)
 {
@@ -112,7 +111,7 @@ static void fuseapi_rmdir(const char *path)
     int cb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
-            int sync, const char *checksum, int64_t parent) {
+            const char *checksum, int64_t parent) {
         (void)id;
         (void)name;
         (void)type;
@@ -121,7 +120,6 @@ static void fuseapi_rmdir(const char *path)
         (void)atime;
         (void)mtime;
         (void)ctime;
-        (void)sync;
         (void)checksum;
         (void)parent;
 
@@ -130,10 +128,10 @@ static void fuseapi_rmdir(const char *path)
     return dbcache_rmdir(name, parent, cb);
 }
 
-static int fuseapi_rename(const char *oldpath, const char *path)
+/*static int fuseapi_rename(const char *oldpath, const char *path)
 {
     LOG("fuseapi_rename: %s -> %s", oldpath, path);
-    int rmdircb(int64_t id, const char *uuid, const char *name, int type,
+    int cb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
             int sync, const char *checksum, int64_t parent) {
@@ -155,9 +153,9 @@ static int fuseapi_rename(const char *oldpath, const char *path)
         return 0;
     }
     return dbcache_rename(oldpath, newpath, cb);
-}
+}*/
 
-static void fuseapi_open(const char *path,
+/*static void fuseapi_open(const char *path,
               struct fuse_file_info *fi)
 {
     int rc;
@@ -202,7 +200,7 @@ static int fuseapi_release(const char *path,
     }
 
     return fscache_close(fi->fh);
-}
+}*/
 
 static int fuseapi_readdir(const char *path, void *, fuse_fill_dir_t filler,
                  off_t off, struct fuse_file_info *fi)
@@ -261,7 +259,7 @@ static int fuseapi_readdir(const char *path, void *, fuse_fill_dir_t filler,
     return dbcache_browse(path, cb);
 }
 
-static void fuseapi_create(const char *path,
+/*static void fuseapi_create(const char *path,
             mode_t mode, struct fuse_file_info *fi)
 {
     int rc;
@@ -295,23 +293,23 @@ static void fuseapi_flush(const char *path,
     LOG("fuseapi_flush: %lld", (long long int)ino);
     // nothing to be done
     fuse_reply_buf(req, NULL, 0);
-}
+}*/
 
 static struct fuse_operations fapi_ops = {
     .getattr = fuseapi_getattr,
     .mkdir = fuseapi_mkdir,
-    .unlink = fuseapi_unlink,
+//    .unlink = fuseapi_unlink,
     .rmdir = fuseapi_rmdir,
-    .rename = fuseapi_rename,
-    .chmod = fuseapi_chmod,
-    .chown = fuseapi_chown,
+//    .rename = fuseapi_rename,
+//    .chmod = fuseapi_chmod,
+//    .chown = fuseapi_chown,
 //    .truncate
-    .open = fuseapi_open,
-    .read = fuseapi_read,
-    .write = fuseapi_write,
-    .statfs = fuseapi_statfs,
-    .flush = fuseapi_flush,
-    .release = fuseapi_release,
+//    .open = fuseapi_open,
+//    .read = fuseapi_read,
+//    .write = fuseapi_write,
+//    .statfs = fuseapi_statfs,
+//    .flush = fuseapi_flush,
+//    .release = fuseapi_release,
 //    .fsync
 //    .opendir
     .readdir = fuseapi_readdir,
@@ -320,7 +318,7 @@ static struct fuse_operations fapi_ops = {
 //    .init
 //    .destroy
 //    .access
-    .create = fuseapi_create,
+//    .create = fuseapi_create,
 //    .ftruncate
 //    .fgetattr
 //    .lock

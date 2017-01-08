@@ -36,69 +36,7 @@ int fscache_stop(void)
     return 0;
 }
 
-int fscache_mkdir(int64_t id)
-{
-    int rc;
-    char path[PATH_MAX + 1];
-    char relpath[PATH_MAX + 1];
-    const char *tmp;
-    char *slash;
-
-    memset(path, 0, (PATH_MAX + 1) * sizeof(char));
-    memset(relpath, 0, (PATH_MAX + 1) * sizeof(char));
-    rc = dbcache_path(id, relpath, PATH_MAX);
-    if(0 == rc) {
-        snprintf(path, PATH_MAX, "%s%s", fscachedir, relpath);
-
-        tmp = path;
-        tmp += strlen(fscachedir);
-        tmp++;
-
-        while(*tmp) {
-            slash = strchr(tmp, '/');
-            if(NULL == slash) {
-                break;
-            }
-            *slash = 0;
-            /* do not check rc as these calls may fail when dir is already
-               there */
-            mkdir(path, (mode_t)0700);
-            *slash = '/';
-            tmp = slash;
-            tmp++;
-        }
-
-        rc = mkdir(path, (mode_t)0700);
-        if(rc != 0) {
-            rc = errno;
-        }
-    }
-
-    return rc;
-}
-
-int fscache_rmdir(int64_t id)
-{
-    int rc;
-    char path[PATH_MAX + 1];
-    char relpath[PATH_MAX + 1];
-
-    memset(path, 0, (PATH_MAX + 1) * sizeof(char));
-    memset(relpath, 0, (PATH_MAX + 1) * sizeof(char));
-    rc = dbcache_path(id, relpath, PATH_MAX);
-    if(0 == rc) {
-        snprintf(path, PATH_MAX, "%s%s", fscachedir, relpath);
-
-        rc = rmdir(path);
-        if(rc != 0) {
-            rc = errno;
-        }
-    }
-
-    return rc;
-}
-
-int fscache_create(int64_t id, int *fd)
+int fscache_create(const char *uuid, int *fd)
 {
     int rc;
     char path[PATH_MAX + 1];
@@ -120,7 +58,7 @@ int fscache_create(int64_t id, int *fd)
     return rc;
 }
 
-int fscache_open(int64_t id, int flags, int *fd)
+int fscache_open(const char *uuid, int flags, int *fd)
 {
     int rc;
     char path[PATH_MAX + 1];
@@ -238,7 +176,7 @@ int fscache_write(int fd, fscache_write_cb_t *cb, const void *buf, off_t off,
     return 0;
 }
 
-int fscache_rm(int64_t id)
+int fscache_rm(const char *uuid)
 {
     int rc;
     char path[PATH_MAX + 1];
