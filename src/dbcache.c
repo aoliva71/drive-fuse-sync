@@ -22,11 +22,6 @@ static sqlite3 *sql = NULL;
 static sqlite3_stmt *tupdate = NULL;
 static sqlite3_stmt *tselect = NULL;
 
-static sqlite3_stmt *cselectall = NULL;
-static sqlite3_stmt *cselect = NULL;
-static sqlite3_stmt *cinsert = NULL;
-static sqlite3_stmt *cupdate = NULL;
-
 static sqlite3_stmt *dpinpoint = NULL;
 static sqlite3_stmt *dupdate = NULL;
 
@@ -100,9 +95,9 @@ int dbcache_setup_schema(void)
     }
     sqlite3_finalize(sel);
 
-    sqlite3_exec(sql, "CREATE TABLE IF NOT EXISTS dfs_inode ( "
+    sqlite3_exec(sql, "CREATE TABLE IF NOT EXISTS dfs_entry ( "
             "id INTEGER NOT NULL PRIMARY KEY, "
-            "extid TEXT NOT NULL, "
+            "uuid TEXT, "
             "name TEXT NOT NULL, "
             "type INTEGER NOT NULL, "
             "size INTEGER NOT NULL, "
@@ -111,16 +106,15 @@ int dbcache_setup_schema(void)
             "mtime REAL NOT NULL, "
             "ctime REAL NOT NULL, "
             "sync INTEGER NOT NULL, "
-            "refcount INTEGER NOT NULL, "
-            "checksum TEXT NOT NULL, "
+            "checksum TEXT, "
             "parent INTEGER, "
-            "FOREIGN KEY ( parent ) REFERENCES dfs_inode ( id ) "
+            "FOREIGN KEY ( parent ) REFERENCES dfs_entry ( id ) "
             "ON DELETE CASCADE "
             ")", NULL, NULL, NULL);
-    sqlite3_exec(sql, "CREATE INDEX IF NOT EXISTS dfs_inode_extid "
-            "ON dfs_inode ( extid )", NULL, NULL, NULL);
-    sqlite3_exec(sql, "CREATE INDEX IF NOT EXISTS dfs_inode_parent "
-            "ON dfs_inode ( parent )", NULL, NULL, NULL);
+    sqlite3_exec(sql, "CREATE INDEX IF NOT EXISTS dfs_entry_uuid "
+            "ON dfs_entry ( uuid )", NULL, NULL, NULL);
+    sqlite3_exec(sql, "CREATE INDEX IF NOT EXISTS dfs_entry_parent "
+            "ON dfs_entry ( parent )", NULL, NULL, NULL);
     sqlite3_exec(sql, "CREATE TABLE IF NOT EXISTS dfs_token ( "
             "id INTEGER NOT NULL PRIMARY KEY, "
             "token_type TEXT NOT NULL, "
@@ -129,25 +123,16 @@ int dbcache_setup_schema(void)
             "expires_in INTEGER NOT NULL, "
             "ts INTEGER NOT NULL "
             ")", NULL, NULL, NULL);
-    sqlite3_exec(sql, "CREATE TABLE IF NOT EXISTS dfs_cache ( "
-            "id INTEGER NOT NULL PRIMARY KEY, "
-            "file_id TEXT NOT NULL, "
-            "state INTEGER NOT NULL "
-            ")", NULL, NULL, NULL);
-    sqlite3_exec(sql, "CREATE INDEX IF NOT EXISTS dfs_cache_fileid "
-            "ON dfs_cache ( file_id )", NULL, NULL, NULL);
-    sqlite3_exec(sql, "CREATE INDEX IF NOT EXISTS dfs_cache_state "
-            "ON dfs_cache ( state )", NULL, NULL, NULL);
 
-    sqlite3_prepare_v2(sql, "SELECT extid FROM dfs_inode WHERE parent IS NULL",
+    sqlite3_prepare_v2(sql, "SELECT uuid FROM dfs_entry WHERE parent IS NULL",
             -1, &sel, NULL);
     rc = sqlite3_step(sel);
     if(SQLITE_DONE == rc) {
-        rc = sqlite3_exec(sql, "INSERT INTO dfs_inode ( extid, name, "
-            "type, size, mode, atime, mtime, ctime, sync, refcount, checksum ) "
-            "VALUES ( '00000000-0000-0000-0000-000000000000', '/', 1, 0, 448, "
+        rc = sqlite3_exec(sql, "INSERT INTO dfs_entry ( name, type, size, "
+            "mode, atime, mtime, ctime, sync ) "
+            "VALUES ( '/', 1, 0, 448, "
             "strftime('%s', 'now'), strftime('%s', 'now'), "
-            "strftime('%s', 'now'), 1, 0, '@')",
+            "strftime('%s', 'now'), 0 )",
             NULL, NULL, NULL);
     }
     sqlite3_finalize(sel);
@@ -177,84 +162,55 @@ int dbcache_setup(void)
         "expires_in, ts FROM dfs_token",
         -1, &tselect, NULL);
 
-    /* cache */
-    sqlite3_prepare_v2(sql, "SELECT id, file_id, state FROM dfs_cache",
-        -1, &cselectall, NULL);
-
-    sqlite3_prepare_v2(sql, "SELECT id, state FROM dfs_cache WHERE file_id = ?",
-        -1, &cselect, NULL);
-
-    sqlite3_prepare_v2(sql, "INSERT INTO dfs_cache ( file_id, state ) VALUES "
-        "(?, 0)",
-        -1, &cinsert, NULL);
-    
-    sqlite3_prepare_v2(sql, "UPDATE dfs_cache SET state = ? WHERE file_id = ?",
-        -1, &cupdate, NULL);
-
-    /* empty cache */
-    sqlite3_exec(sql, "DELETE FROM dfs_cache", NULL, NULL, NULL);
-
     /* drive */
     sqlite3_prepare_v2(sql, "SELECT id, name, type, size, mode, "
-        "atime, mtime, ctime, sync, refcount, checksum, parent "
-        "FROM dfs_inode WHERE extid = ?", -1, &dpinpoint,
+        "atime, mtime, ctime, sync, checksum, parent "
+        "FROM dfs_entry WHERE uuid = ?", -1, &dpinpoint,
         NULL);
 
-    sqlite3_prepare_v2(sql, "UPDATE dfs_inode SET extid = ?, parent = ? "
+    sqlite3_prepare_v2(sql, "UPDATE dfs_entry SET uuid = ?, parent = ? "
         "WHERE id = ?", -1, &dupdate, NULL);
 
-    /* inodes */
-    sqlite3_prepare_v2(sql, "INSERT INTO dfs_inode ( extid, name, "
-        "type, size, mode, atime, mtime, ctime, sync, refcount, checksum, "
-        "parent ) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ? )",
+    /* entries */
+    sqlite3_prepare_v2(sql, "INSERT INTO dfs_entry ( uuid, name, "
+        "type, size, mode, atime, mtime, ctime, sync, checksum, "
+        "parent ) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )",
         -1, &iinsert, NULL);
 
-    sqlite3_prepare_v2(sql, "UPDATE dfs_inode SET name = ? WHERE id = ? ",
+    sqlite3_prepare_v2(sql, "UPDATE dfs_entry SET name = ? WHERE id = ? ",
         -1, &irename, NULL);
 
-    sqlite3_prepare_v2(sql, "DELETE FROM dfs_inode WHERE id = ? ",
+    sqlite3_prepare_v2(sql, "DELETE FROM dfs_entry WHERE id = ? ",
         -1, &idelete, NULL);
 
-    sqlite3_prepare_v2(sql, "SELECT extid, name, type, size, mode, "
-        "atime, mtime, ctime, sync, refcount, checksum, parent "
-        "FROM dfs_inode WHERE id = ?", -1, &ipinpoint,
+    sqlite3_prepare_v2(sql, "SELECT id, uuid, name, type, size, mode, "
+        "atime, mtime, ctime, sync, checksum, parent "
+        "FROM dfs_entry WHERE name = ? AND parent = ?", -1, &ipinpoint,
         NULL);
 
-    sqlite3_prepare_v2(sql, "SELECT id, extid, type, size, mode, "
-        "atime, mtime, ctime, sync, refcount, checksum "
-        "FROM dfs_inode WHERE name = ? AND parent = ?", -1, &ilookup,
+    sqlite3_prepare_v2(sql, "SELECT id, uuid, type, size, mode, "
+        "atime, mtime, ctime, sync, checksum "
+        "FROM dfs_entry WHERE name = ? AND parent = ?", -1, &ilookup,
         NULL);
 
-    sqlite3_prepare_v2(sql, "SELECT id, extid, name, type, size, mode, "
-        "atime, mtime, ctime, sync, refcount, checksum "
-        "FROM dfs_inode "
+    sqlite3_prepare_v2(sql, "SELECT id, uuid, name, type, size, mode, "
+        "atime, mtime, ctime, sync, checksum "
+        "FROM dfs_entry "
         "WHERE parent = ? AND id > ? "
         "ORDER BY id",
         -1, &ibrowse, NULL);
 
-    sqlite3_prepare_v2(sql, "UPDATE dfs_inode SET mode = ? WHERE id = ? ",
+    sqlite3_prepare_v2(sql, "UPDATE dfs_entry SET mode = ? WHERE id = ? ",
         -1, &ichmod, NULL);
 
-    sqlite3_prepare_v2(sql, "UPDATE dfs_inode SET size = ? WHERE id = ? ",
+    sqlite3_prepare_v2(sql, "UPDATE dfs_entry SET size = ? WHERE id = ? ",
         -1, &iresize, NULL);
 
-    sqlite3_prepare_v2(sql, "UPDATE dfs_inode SET atime = ? WHERE id = ? ",
+    sqlite3_prepare_v2(sql, "UPDATE dfs_entry SET atime = ? WHERE id = ? ",
         -1, &ichatime, NULL);
 
-    sqlite3_prepare_v2(sql, "UPDATE dfs_inode SET mtime = ? WHERE id = ? ",
+    sqlite3_prepare_v2(sql, "UPDATE dfs_entry SET mtime = ? WHERE id = ? ",
         -1, &ichmtime, NULL);
-
-    sqlite3_prepare_v2(sql, "UPDATE dfs_inode SET refcount = refcount + 1 "
-        "WHERE id = ? ",
-        -1, &iaddref, NULL);
-
-    sqlite3_prepare_v2(sql, "UPDATE dfs_inode SET refcount = refcount - 1 "
-        "WHERE id = ? ",
-        -1, &irmref, NULL);
-
-    /* reset refcount */
-    sqlite3_exec(sql, "UPDATE dfs_inode SET refcount = 0",
-        NULL, NULL, NULL);
 
     return 0;
 }
@@ -360,7 +316,7 @@ int dbcache_cachefiles(dbcache_statecb_t *cb)
  
 }
 
-int dbcache_update(const char *extid, const char *name, int isdir, int64_t size,
+int dbcache_update(const char *uuid, const char *name, int isdir, int64_t size,
                 const struct timespec *mtime, const struct timespec *ctime,
                 int64_t version, const char *cksum, const char *parent)
 {
@@ -374,10 +330,10 @@ int dbcache_update(const char *extid, const char *name, int isdir, int64_t size,
 
     if(strlen(parent)) {
         rc = sqlite3_reset(dpinpoint);
-        rc = sqlite3_bind_text(dpinpoint, 1, extid, -1, NULL);
+        rc = sqlite3_bind_text(dpinpoint, 1, uuid, -1, NULL);
         rc = sqlite3_step(dpinpoint);
         if(SQLITE_ROW == rc) {
-            /* extid found, updating */
+            /* uuid found, updating */
             id = (int64_t)sqlite3_column_int64(dpinpoint, 0);
 
             rc = sqlite3_reset(dpinpoint);
@@ -389,14 +345,14 @@ int dbcache_update(const char *extid, const char *name, int isdir, int64_t size,
             parentid = (int64_t)sqlite3_column_int64(dpinpoint, 0);
 
             rc = sqlite3_reset(dupdate);
-            rc = sqlite3_bind_text(dupdate, 1, extid, -1, NULL);
+            rc = sqlite3_bind_text(dupdate, 1, uuid, -1, NULL);
             rc = sqlite3_bind_int64(dupdate, 2, (sqlite3_int64)parentid);
             rc = sqlite3_bind_int64(dupdate, 3, (sqlite3_int64)id);
             rc = sqlite3_step(dupdate);
 
             return SQLITE_DONE == rc ? 0 : -1;
         } else if (SQLITE_DONE == rc) {
-            /* extid not found, inserting */
+            /* uuid not found, inserting */
             rc = sqlite3_reset(dpinpoint);
             rc = sqlite3_bind_text(dpinpoint, 1, parent, -1, NULL);
             rc = sqlite3_step(dpinpoint);
@@ -406,7 +362,7 @@ int dbcache_update(const char *extid, const char *name, int isdir, int64_t size,
             parentid = (int64_t)sqlite3_column_int64(dpinpoint, 0);
 
             rc = sqlite3_reset(iinsert);
-            rc = sqlite3_bind_text(iinsert, 1, extid, -1, NULL);
+            rc = sqlite3_bind_text(iinsert, 1, uuid, -1, NULL);
             rc = sqlite3_bind_text(iinsert, 2, name, -1, NULL);
             type = isdir ? 1 : 2;
             rc = sqlite3_bind_int(iinsert, 3, type);
@@ -434,7 +390,7 @@ int dbcache_update(const char *extid, const char *name, int isdir, int64_t size,
         /* updating root */
         id = 1LL;
         rc = sqlite3_reset(dupdate);
-        rc = sqlite3_bind_text(dupdate, 1, extid, -1, NULL);
+        rc = sqlite3_bind_text(dupdate, 1, uuid, -1, NULL);
         rc = sqlite3_bind_null(dupdate, 2);
         rc = sqlite3_bind_int64(dupdate, 3, (sqlite3_int64)id);
         rc = sqlite3_step(dupdate);
@@ -443,7 +399,7 @@ int dbcache_update(const char *extid, const char *name, int isdir, int64_t size,
     return 0;
 }
 
-int dbcache_createdir(int64_t *id, const char *extid, const char *name, mode_t mode,
+int dbcache_createdir(int64_t *id, const char *uuid, const char *name, mode_t mode,
         int sync, const char *checksum, int64_t parent)
 {
     int type;
@@ -454,7 +410,7 @@ int dbcache_createdir(int64_t *id, const char *extid, const char *name, mode_t m
     double atime, mtime, ctime;
     
     rc = sqlite3_reset(iinsert);
-    rc = sqlite3_bind_text(iinsert, 1, extid, -1, NULL);
+    rc = sqlite3_bind_text(iinsert, 1, uuid, -1, NULL);
     rc = sqlite3_bind_text(iinsert, 2, name, -1, NULL);
     type = 1;
     rc = sqlite3_bind_int(iinsert, 3, type);
@@ -483,7 +439,7 @@ int dbcache_createdir(int64_t *id, const char *extid, const char *name, mode_t m
     return SQLITE_DONE == rc ? 0 : -1;
 }
 
-int dbcache_createfile(int64_t *id, const char *extid, const char *name, size_t size,
+int dbcache_createfile(int64_t *id, const char *uuid, const char *name, size_t size,
         mode_t mode, int sync, const char *checksum, int64_t parent)
 {
     int type;
@@ -493,7 +449,7 @@ int dbcache_createfile(int64_t *id, const char *extid, const char *name, size_t 
     double atime, mtime, ctime;
     
     rc = sqlite3_reset(iinsert);
-    rc = sqlite3_bind_text(iinsert, 1, extid, -1, NULL);
+    rc = sqlite3_bind_text(iinsert, 1, uuid, -1, NULL);
     rc = sqlite3_bind_text(iinsert, 2, name, -1, NULL);
     type = 2;
     rc = sqlite3_bind_int(iinsert, 3, type);
@@ -521,10 +477,14 @@ int dbcache_createfile(int64_t *id, const char *extid, const char *name, size_t 
     return SQLITE_DONE == rc ? 0 : -1;
 }
 
-int dbcache_pinpoint(int64_t id, dbcache_cb_t *cb)
+int dbcache_pinpoint(const char *cpath, dbcache_cb_t *cb)
 {
+    char path[PATH_MAX + 1];
+    const char *pbegin;
+    const char *pend;
     int rc;
-    const char *extid;
+    int64_t id;
+    const char *uuid;
     const char *name;
     int type;
     size_t size;
@@ -535,33 +495,45 @@ int dbcache_pinpoint(int64_t id, dbcache_cb_t *cb)
     int refcount;
     const char *checksum;
     int64_t parent;
- 
-    rc = sqlite3_reset(ipinpoint);
-    rc = sqlite3_bind_int64(ipinpoint, 1, id);
-    rc = sqlite3_step(ipinpoint);
-    if(rc != SQLITE_ROW) {
-        return -1;
+
+    memset(path, 0, (PATH_MAX + 1) * sizeof(char));
+    strncpy(path, cpath, PATH_MAX);
+    pbegin = path;
+    pbegin++;
+    parent = 1;     /* root */
+    for(;;) {
+        pend = strchr(pbegin, '/');
+        if(pend) {
+            *pend = 0;
+        }
+        rc = sqlite3_reset(ipinpoint);
+        rc = sqlite3_bind_text(ipinpoint, 1, pbegin);
+        rc = sqlite3_bind_int64(ipinpoint, 2, parent);
+        rc = sqlite3_step(ipinpoint);
+        if(rc != SQLITE_ROW) {
+            return -1;
+        }
+        id = sqlite3_column_int64(ipinpoint, 0);
+        uuid = (const char *)sqlite3_column_text(ipinpoint, 1);
+        name = (const char *)sqlite3_column_text(ipinpoint, 2);
+        type = sqlite3_column_int(ipinpoint, 3);
+        size = sqlite3_column_int64(ipinpoint, 4);
+        mode = sqlite3_column_int(ipinpoint, 5);
+        r = sqlite3_column_double(ipinpoint, 6);
+        r2ts(&atime, r);
+        r = sqlite3_column_double(ipinpoint, 7);
+        r2ts(&mtime, r);
+        r = sqlite3_column_double(ipinpoint, 8);
+        r2ts(&ctime, r);
+        sync = sqlite3_column_int(ipinpoint, 9);
+        checksum = (const char *)sqlite3_column_text(ipinpoint, 10);
+        parent = sqlite3_column_int64(ipinpoint, 11);
+        if(!pend) {
+            rc = cb(id, uuid, name, type, size, mode, &atime, &mtime, &ctime,
+                    sync, checksum, parent);
+            break;
+        }
     }
-    
-    extid = (const char *)sqlite3_column_text(ipinpoint, 0);
-    name = (const char *)sqlite3_column_text(ipinpoint, 1);
-    type = sqlite3_column_int(ipinpoint, 2);
-    size = sqlite3_column_int64(ipinpoint, 3);
-    mode = sqlite3_column_int(ipinpoint, 4);
-    r = sqlite3_column_double(ipinpoint, 5);
-    r2ts(&atime, r);
-    r = sqlite3_column_double(ipinpoint, 6);
-    r2ts(&mtime, r);
-    r = sqlite3_column_double(ipinpoint, 7);
-    r2ts(&ctime, r);
-    sync = sqlite3_column_int(ipinpoint, 8);
-    refcount = sqlite3_column_int(ipinpoint, 9);
-    checksum = (const char *)sqlite3_column_text(ipinpoint, 10);
-    parent = sqlite3_column_int64(ipinpoint, 11);
-
-    rc = cb(id, extid, name, type, size, mode, &atime, &mtime, &ctime, sync,
-            refcount, checksum, parent);
-
     return rc;
 }
 
@@ -569,7 +541,7 @@ int dbcache_lookup(const char *name, int64_t parent, dbcache_cb_t *cb)
 {
     int rc;
     int64_t id;
-    const char *extid;
+    const char *uuid;
     int type;
     size_t size;
     mode_t mode;
@@ -588,7 +560,7 @@ int dbcache_lookup(const char *name, int64_t parent, dbcache_cb_t *cb)
     }
     
     id = sqlite3_column_int64(ilookup, 0);
-    extid = (const char *)sqlite3_column_text(ilookup, 1);
+    uuid = (const char *)sqlite3_column_text(ilookup, 1);
     type = sqlite3_column_int(ilookup, 2);
     size = sqlite3_column_int64(ilookup, 3);
     mode = sqlite3_column_int(ilookup, 4);
@@ -602,7 +574,7 @@ int dbcache_lookup(const char *name, int64_t parent, dbcache_cb_t *cb)
     refcount = sqlite3_column_int(ilookup, 9);
     checksum = (const char *)sqlite3_column_text(ilookup, 10);
 
-    rc = cb(id, extid, name, type, size, mode, &atime, &mtime, &ctime, sync,
+    rc = cb(id, uuid, name, type, size, mode, &atime, &mtime, &ctime, sync,
             refcount, checksum, parent);
 
     return rc;
@@ -613,7 +585,7 @@ int dbcache_browse(int *err, int64_t parent, int64_t first, dbcache_cb_t *cb)
 {
     int rc;
     int64_t id;
-    const char *extid;
+    const char *uuid;
     const char *name;
     int type;
     size_t size;
@@ -630,7 +602,7 @@ int dbcache_browse(int *err, int64_t parent, int64_t first, dbcache_cb_t *cb)
     rc = sqlite3_step(ibrowse);
     if(SQLITE_ROW == rc) {
         id = sqlite3_column_int64(ibrowse, 0);
-        extid = (const char *)sqlite3_column_text(ibrowse, 1);
+        uuid = (const char *)sqlite3_column_text(ibrowse, 1);
         name = (const char *)sqlite3_column_text(ibrowse, 2);
         type = sqlite3_column_int(ibrowse, 3);
         size = sqlite3_column_int64(ibrowse, 4);
@@ -645,7 +617,7 @@ int dbcache_browse(int *err, int64_t parent, int64_t first, dbcache_cb_t *cb)
         refcount = sqlite3_column_int(ibrowse, 10);
         checksum = (const char *)sqlite3_column_text(ibrowse, 11);
 
-        rc = cb(id, extid, name, type, size, mode, &atime, &mtime, &ctime,
+        rc = cb(id, uuid, name, type, size, mode, &atime, &mtime, &ctime,
                 sync, refcount, checksum, parent);
         if(rc != 0) {
             return -1;
@@ -737,7 +709,7 @@ int dbcache_rm(const char *name, int64_t parent, dbcache_cb_t *cb)
 {
     int rc;
     sqlite3_int64 id;
-    const char *extid;
+    const char *uuid;
     int type;
     size_t size;
     mode_t mode;
@@ -757,7 +729,7 @@ int dbcache_rm(const char *name, int64_t parent, dbcache_cb_t *cb)
     }
 
     id = sqlite3_column_int64(ilookup, 0);
-    extid = (const char *)sqlite3_column_text(ilookup, 1);
+    uuid = (const char *)sqlite3_column_text(ilookup, 1);
     type = sqlite3_column_int(ilookup, 2);
     if(type != 2) {
         /* notfile */
@@ -775,7 +747,7 @@ int dbcache_rm(const char *name, int64_t parent, dbcache_cb_t *cb)
     refcount = sqlite3_column_int(ilookup, 9);
     checksum = (const char *)sqlite3_column_text(ilookup, 10);
 
-    rc = cb(id, extid, name, type, size, mode, &atime, &mtime, &ctime, sync,
+    rc = cb(id, uuid, name, type, size, mode, &atime, &mtime, &ctime, sync,
             refcount, checksum, parent);
     if(0 == rc) {
         rc = sqlite3_reset(idelete);
@@ -790,7 +762,7 @@ int dbcache_rmdir(const char *name, int64_t parent, dbcache_cb_t *cb)
 {
     int rc;
     sqlite3_int64 id;
-    const char *extid;
+    const char *uuid;
     int type;
     size_t size;
     mode_t mode;
@@ -810,7 +782,7 @@ int dbcache_rmdir(const char *name, int64_t parent, dbcache_cb_t *cb)
     }
     
     id = sqlite3_column_int64(ilookup, 0);
-    extid = (const char *)sqlite3_column_text(ilookup, 1);
+    uuid = (const char *)sqlite3_column_text(ilookup, 1);
     type = sqlite3_column_int(ilookup, 2);
     size = sqlite3_column_int64(ilookup, 3);
     mode = sqlite3_column_int(ilookup, 4);
@@ -833,7 +805,7 @@ int dbcache_rmdir(const char *name, int64_t parent, dbcache_cb_t *cb)
         return -1;
     }
 
-    rc = cb(id, extid, name, type, size, mode, &atime, &mtime, &ctime, sync,
+    rc = cb(id, uuid, name, type, size, mode, &atime, &mtime, &ctime, sync,
             refcount, checksum, parent);
     if(0 == rc) {
         rc = sqlite3_reset(idelete);
