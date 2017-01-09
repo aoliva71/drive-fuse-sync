@@ -3,6 +3,7 @@
 
 #include <errno.h>
 #include <limits.h>
+#include <pthread.h>
 #include <sqlite3.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,6 +21,7 @@ static sqlite3 *sql = NULL;
 static sqlite3_stmt *tupdate = NULL;
 static sqlite3_stmt *tselect = NULL;
 
+static sqlite3_stmt *selbyid = NULL;
 static sqlite3_stmt *selbynampar = NULL;
 static sqlite3_stmt *updsyncdelid = NULL;
 static sqlite3_stmt *selbypar = NULL;
@@ -40,12 +42,16 @@ static sqlite3_stmt *ichmtime = NULL;
 static void ts2r(double *, const struct timespec *);
 static void r2ts(struct timespec *, double);
 
+static pthread_mutex_t dbcache_mutex;
+
 #include <stdarg.h>
 #define LOG(...) printf(__VA_ARGS__); printf("\n")
 
 int dbcache_open(const char *path)
 {
     int rc;
+
+    pthread_mutex_init(&dbcache_mutex, NULL);
 
     rc = sqlite3_open(path, &sql);
     if(rc != SQLITE_OK) {
@@ -59,6 +65,8 @@ int dbcache_open(const char *path)
 int dbcache_close(void)
 {
     sqlite3_close(sql);
+    pthread_mutex_destroy(&dbcache_mutex);
+
     return 0;
 }
 
@@ -163,7 +171,7 @@ int dbcache_setup(void)
 
     /* drive */
     sqlite3_prepare_v2(sql, "SELECT id, name, type, size, mode, "
-        "atime, mtime, ctime, sync, checksum, parent "
+        "atime, mtime, ctime, checksum, parent "
         "FROM dfs_entry WHERE uuid = ?", -1, &selbyuuid,
         NULL);
 
@@ -171,6 +179,11 @@ int dbcache_setup(void)
         "WHERE id = ?", -1, &updbyid, NULL);
 
     /* entries */
+    sqlite3_prepare_v2(sql, "SELECT uuid, type, size, mode, "
+        "atime, mtime, ctime, sync, checksum, parent "
+        "FROM dfs_entry WHERE id = ?", -1, &selbyid,
+        NULL);
+
     sqlite3_prepare_v2(sql, "SELECT id, uuid, type, size, mode, "
         "atime, mtime, ctime, sync, checksum "
         "FROM dfs_entry WHERE name = ? AND parent = ?", -1, &selbynampar,
@@ -233,23 +246,29 @@ int dbcache_auth_load(char *token_type, size_t ttlen, char *access_token,
     const char *ctmp;
     int itmp;
 
+    pthread_mutex_lock(&dbcache_mutex);
+
     rc = sqlite3_reset(tselect);
     rc = sqlite3_step(tselect);
-    if(rc != SQLITE_ROW) {
-        return -1;
+    if(SQLITE_ROW == rc) {
+        ctmp = (const char *)sqlite3_column_text(tselect, 0);
+        strncpy(token_type, ctmp, ttlen);
+        ctmp = (const char *)sqlite3_column_text(tselect, 1);
+        strncpy(access_token, ctmp, atlen);
+        ctmp = (const char *)sqlite3_column_text(tselect, 2);
+        strncpy(refresh_token, ctmp, rtlen);
+        itmp = sqlite3_column_int(tselect, 3);
+        *expires_in = itmp;
+        itmp = sqlite3_column_int(tselect, 4);
+        *expiration_time = (time_t)itmp;
+        rc = 0;
+    } else {
+        rc = -1;
     }
-    ctmp = (const char *)sqlite3_column_text(tselect, 0);
-    strncpy(token_type, ctmp, ttlen);
-    ctmp = (const char *)sqlite3_column_text(tselect, 1);
-    strncpy(access_token, ctmp, atlen);
-    ctmp = (const char *)sqlite3_column_text(tselect, 2);
-    strncpy(refresh_token, ctmp, rtlen);
-    itmp = sqlite3_column_int(tselect, 3);
-    *expires_in = itmp;
-    itmp = sqlite3_column_int(tselect, 4);
-    *expiration_time = (time_t)itmp;
 
-    return 0;
+    pthread_mutex_unlock(&dbcache_mutex);
+
+    return rc;
 }
 
 int dbcache_auth_store(const char *token_type, const char *access_token,
@@ -259,6 +278,8 @@ int dbcache_auth_store(const char *token_type, const char *access_token,
     int rc;
     int itmp;
 
+    pthread_mutex_lock(&dbcache_mutex);
+
     rc = sqlite3_reset(tupdate);
     rc = sqlite3_bind_text(tupdate, 1, token_type, -1, NULL);
     rc = sqlite3_bind_text(tupdate, 2, access_token, -1, NULL);
@@ -267,6 +288,8 @@ int dbcache_auth_store(const char *token_type, const char *access_token,
     itmp = (int)*expiration_time;
     rc = sqlite3_bind_int(tupdate, 5, itmp);
     rc = sqlite3_step(tupdate);
+
+    pthread_mutex_unlock(&dbcache_mutex);
 
     return SQLITE_DONE == rc ? 0 : -1;
 }
@@ -283,6 +306,8 @@ int dbcache_update(const char *uuid, const char *name, int isdir, int64_t size,
     int sync;
     int64_t parentid;
 
+    pthread_mutex_lock(&dbcache_mutex);
+
     if(strlen(parent)) {
         /* updating file or dir */
         rc = sqlite3_reset(selbyuuid);
@@ -295,52 +320,54 @@ int dbcache_update(const char *uuid, const char *name, int isdir, int64_t size,
             rc = sqlite3_reset(selbyuuid);
             rc = sqlite3_bind_text(selbyuuid, 1, parent, -1, NULL);
             rc = sqlite3_step(selbyuuid);
-            if(rc != SQLITE_ROW) {
-                return -1;
+            if(SQLITE_ROW == rc) {
+                parentid = (int64_t)sqlite3_column_int64(selbyuuid, 0);
+
+                rc = sqlite3_reset(updbyid);
+                rc = sqlite3_bind_text(updbyid, 1, uuid, -1, NULL);
+                rc = sqlite3_bind_int64(updbyid, 2, (sqlite3_int64)parentid);
+                rc = sqlite3_bind_int64(updbyid, 3, (sqlite3_int64)id);
+                rc = sqlite3_step(updbyid);
+
+                rc = (SQLITE_DONE == rc) ? 0 : -1;
+            } else {
+                rc = -1;
             }
-            parentid = (int64_t)sqlite3_column_int64(selbyuuid, 0);
-
-            rc = sqlite3_reset(updbyid);
-            rc = sqlite3_bind_text(updbyid, 1, uuid, -1, NULL);
-            rc = sqlite3_bind_int64(updbyid, 2, (sqlite3_int64)parentid);
-            rc = sqlite3_bind_int64(updbyid, 3, (sqlite3_int64)id);
-            rc = sqlite3_step(updbyid);
-
-            return SQLITE_DONE == rc ? 0 : -1;
         } else if (SQLITE_DONE == rc) {
             /* uuid not found, inserting */
             rc = sqlite3_reset(selbyuuid);
             rc = sqlite3_bind_text(selbyuuid, 1, parent, -1, NULL);
             rc = sqlite3_step(selbyuuid);
-            if(rc != SQLITE_ROW) {
-                return -1;
+            if(SQLITE_ROW == rc) {
+                parentid = (int64_t)sqlite3_column_int64(selbyuuid, 0);
+
+                rc = sqlite3_reset(insertentry);
+                rc = sqlite3_bind_text(insertentry, 1, uuid, -1, NULL);
+                rc = sqlite3_bind_text(insertentry, 2, name, -1, NULL);
+                type = isdir ? 1 : 2;
+                rc = sqlite3_bind_int(insertentry, 3, type);
+                rc = sqlite3_bind_int64(insertentry, 4, size);
+                mode = isdir ? 0700 : 0600;
+                rc = sqlite3_bind_int(insertentry, 5, mode);
+                ts2r(&dmtime, mtime);
+                datime = dmtime;
+                rc = sqlite3_bind_double(insertentry, 6, datime);
+                rc = sqlite3_bind_double(insertentry, 7, dmtime);
+                ts2r(&dctime, ctime);
+                rc = sqlite3_bind_double(insertentry, 8, dctime);
+                sync = 1;
+                rc = sqlite3_bind_int(insertentry, 9, sync);
+                rc = sqlite3_bind_text(insertentry, 10, cksum, -1, NULL);
+                rc = sqlite3_bind_int64(insertentry, 11, parentid);
+
+                rc = sqlite3_step(insertentry);
+
+                rc = (SQLITE_DONE == rc) ? 0 : -1;
+            } else {
+                rc = -1;
             }
-            parentid = (int64_t)sqlite3_column_int64(selbyuuid, 0);
-
-            rc = sqlite3_reset(insertentry);
-            rc = sqlite3_bind_text(insertentry, 1, uuid, -1, NULL);
-            rc = sqlite3_bind_text(insertentry, 2, name, -1, NULL);
-            type = isdir ? 1 : 2;
-            rc = sqlite3_bind_int(insertentry, 3, type);
-            rc = sqlite3_bind_int64(insertentry, 4, size);
-            mode = isdir ? 0700 : 0600;
-            rc = sqlite3_bind_int(insertentry, 5, mode);
-            ts2r(&dmtime, mtime);
-            datime = dmtime;
-            rc = sqlite3_bind_double(insertentry, 6, datime);
-            rc = sqlite3_bind_double(insertentry, 7, dmtime);
-            ts2r(&dctime, ctime);
-            rc = sqlite3_bind_double(insertentry, 8, dctime);
-            sync = 1;
-            rc = sqlite3_bind_int(insertentry, 9, sync);
-            rc = sqlite3_bind_text(insertentry, 10, cksum, -1, NULL);
-            rc = sqlite3_bind_int64(insertentry, 11, parentid);
-
-            rc = sqlite3_step(insertentry);
-
-            return SQLITE_DONE == rc ? 0 : -1;
         } else {
-            return -1;
+            rc = -1;
         }
     } else {
         /* updating root */
@@ -350,9 +377,12 @@ int dbcache_update(const char *uuid, const char *name, int isdir, int64_t size,
         rc = sqlite3_bind_null(updbyid, 2);
         rc = sqlite3_bind_int64(updbyid, 3, (sqlite3_int64)id);
         rc = sqlite3_step(updbyid);
-        return SQLITE_DONE == rc ? 0 : -1;
+        rc = (SQLITE_DONE == rc) ? 0 : -1;
     }
-    return 0;
+
+    pthread_mutex_unlock(&dbcache_mutex);
+
+    return rc;
 }
 
 int dbcache_mkdir(const char *cpath, mode_t mode, dbcache_cb_t *cb)
@@ -598,43 +628,76 @@ int dbcache_findbypath(const char *cpath, dbcache_cb_t *cb)
     const char *checksum;
     int64_t parent;
 
-    memset(path, 0, (PATH_MAX + 1) * sizeof(char));
-    strncpy(path, cpath, PATH_MAX);
-    pbegin = path;
-    pbegin++;
-    parent = 1;     /* root */
-    for(;;) {
-        pend = strchr(pbegin, '/');
-        if(pend) {
-            *pend = 0;
-        }
-        rc = sqlite3_reset(selbynampar);
-        rc = sqlite3_bind_text(selbynampar, 1, pbegin, -1, NULL);
-        rc = sqlite3_bind_int64(selbynampar, 2, parent);
-        rc = sqlite3_step(selbynampar);
-        if(rc != SQLITE_ROW) {
-            return -ENOENT;
-        }
-        id = sqlite3_column_int64(selbynampar, 0);
-        uuid = (const char *)sqlite3_column_text(selbynampar, 1);
-        name = (const char *)sqlite3_column_text(selbynampar, 2);
-        type = sqlite3_column_int(selbynampar, 3);
-        size = sqlite3_column_int64(selbynampar, 4);
-        mode = sqlite3_column_int(selbynampar, 5);
-        r = sqlite3_column_double(selbynampar, 6);
-        r2ts(&atime, r);
-        r = sqlite3_column_double(selbynampar, 7);
-        r2ts(&mtime, r);
-        r = sqlite3_column_double(selbynampar, 8);
-        r2ts(&ctime, r);
-        checksum = (const char *)sqlite3_column_text(selbynampar, 9);
-        parent = sqlite3_column_int64(selbynampar, 10);
-        if(!pend) {
+    pthread_mutex_lock(&dbcache_mutex);
+
+    if(0 == strcmp(cpath, "/")) {
+        rc = sqlite3_reset(selbyid);
+        id = 1;
+        rc = sqlite3_bind_int64(selbyid, 1, id);
+        rc = sqlite3_step(selbyid);
+        if(SQLITE_ROW == rc) {
+            uuid = (const char *)sqlite3_column_text(selbyid, 1);
+            name = (const char *)sqlite3_column_text(selbyid, 2);
+            type = sqlite3_column_int(selbyid, 3);
+            size = sqlite3_column_int64(selbyid, 4);
+            mode = sqlite3_column_int(selbyid, 5);
+            r = sqlite3_column_double(selbyid, 6);
+            r2ts(&atime, r);
+            r = sqlite3_column_double(selbyid, 7);
+            r2ts(&mtime, r);
+            r = sqlite3_column_double(selbyid, 8);
+            r2ts(&ctime, r);
+            checksum = (const char *)sqlite3_column_text(selbyid, 9);
+            parent = sqlite3_column_int64(selbyid, 10);
             rc = cb(id, uuid, name, type, size, mode, &atime, &mtime, &ctime,
                     checksum, parent);
-            break;
+        } else {
+            rc = -ENOENT;
+        }
+
+    } else {
+
+        memset(path, 0, (PATH_MAX + 1) * sizeof(char));
+        strncpy(path, cpath, PATH_MAX);
+        pbegin = path;
+        pbegin++;
+        parent = 1;     /* root */
+        for(;;) {
+            pend = strchr(pbegin, '/');
+            if(pend) {
+                *pend = 0;
+            }
+
+            rc = sqlite3_reset(selbynampar);
+            rc = sqlite3_bind_text(selbynampar, 1, pbegin, -1, NULL);
+            rc = sqlite3_bind_int64(selbynampar, 2, parent);
+            rc = sqlite3_step(selbynampar);
+            if(SQLITE_ROW == rc) {
+                id = sqlite3_column_int64(selbynampar, 0);
+                uuid = (const char *)sqlite3_column_text(selbynampar, 1);
+                name = (const char *)sqlite3_column_text(selbynampar, 2);
+                type = sqlite3_column_int(selbynampar, 3);
+                size = sqlite3_column_int64(selbynampar, 4);
+                mode = sqlite3_column_int(selbynampar, 5);
+                r = sqlite3_column_double(selbynampar, 6);
+                r2ts(&atime, r);
+                r = sqlite3_column_double(selbynampar, 7);
+                r2ts(&mtime, r);
+                r = sqlite3_column_double(selbynampar, 8);
+                r2ts(&ctime, r);
+                checksum = (const char *)sqlite3_column_text(selbynampar, 9);
+                if(!pend) {
+                    rc = cb(id, uuid, name, type, size, mode, &atime, &mtime,
+                            &ctime, checksum, parent);
+                    break;
+                }
+            } else {
+                rc = -ENOENT;
+                break;
+            }
         }
     }
+    pthread_mutex_unlock(&dbcache_mutex);
     return rc;
 }
 
@@ -699,6 +762,8 @@ int dbcache_listdir(const char *cpath, dbcache_cb_t *cb)
     const char *checksum;
     int64_t parent;
 
+    pthread_mutex_lock(&dbcache_mutex);
+
     memset(path, 0, (PATH_MAX + 1) * sizeof(char));
     strncpy(path, cpath, PATH_MAX);
     pbegin = path;
@@ -709,50 +774,65 @@ int dbcache_listdir(const char *cpath, dbcache_cb_t *cb)
         if(pend) {
             *pend = 0;
         }
+        if((1 == parent) && (NULL == pend) && (0 == strlen(pbegin))) {
+            /* no need to navigate child dirs */
+            rc = 0;
+            break;
+        }
+
         rc = sqlite3_reset(selbynampar);
         rc = sqlite3_bind_text(selbynampar, 1, pbegin, -1, NULL);
         rc = sqlite3_bind_int64(selbynampar, 2, parent);
         rc = sqlite3_step(selbynampar);
-        if(rc != SQLITE_ROW) {
-            return -ENOENT;
-        }
-        parent = sqlite3_column_int64(selbynampar, 10);
-        if(!pend) {
-            break;
-        }
-    }
-
-    rc = sqlite3_reset(selbypar);
-    rc = sqlite3_bind_int64(selbypar, 1, parent);
-    for(;;) {
-        rc = sqlite3_step(selbypar);
         if(SQLITE_ROW == rc) {
-            id = sqlite3_column_int64(selbypar, 0);
-            uuid = (const char *)sqlite3_column_text(selbypar, 1);
-            name = (const char *)sqlite3_column_text(selbypar, 2);
-            type = sqlite3_column_int(selbypar, 3);
-            size = sqlite3_column_int64(selbypar, 4);
-            mode = sqlite3_column_int(selbypar, 5);
-            r = sqlite3_column_double(selbynampar, 6);
-            r2ts(&atime, r);
-            r = sqlite3_column_double(selbynampar, 7);
-            r2ts(&mtime, r);
-            r = sqlite3_column_double(selbynampar, 8);
-            r2ts(&ctime, r);
-            checksum = (const char *)sqlite3_column_text(selbypar, 9);
-
-            rc = cb(id, uuid, name, type, size, mode, &atime, &mtime, &ctime,
-                    checksum, parent);
-            if(rc != 0) {
-                return rc;
+            parent = sqlite3_column_int64(selbynampar, 10);
+            if(!pend) {
+                rc = 0;
+                break;
             }
-        } else if(SQLITE_DONE == rc) {
-            break;
         } else {
-            return -EIO;
+            rc = -ENOENT;
         }
     }
-    return 0;
+
+    if(0 == rc) {
+        rc = sqlite3_reset(selbypar);
+        rc = sqlite3_bind_int64(selbypar, 1, parent);
+        for(;;) {
+            rc = sqlite3_step(selbypar);
+            if(SQLITE_ROW == rc) {
+                id = sqlite3_column_int64(selbypar, 0);
+                uuid = (const char *)sqlite3_column_text(selbypar, 1);
+                name = (const char *)sqlite3_column_text(selbypar, 2);
+                type = sqlite3_column_int(selbypar, 3);
+                size = sqlite3_column_int64(selbypar, 4);
+                mode = sqlite3_column_int(selbypar, 5);
+                r = sqlite3_column_double(selbynampar, 6);
+                r2ts(&atime, r);
+                r = sqlite3_column_double(selbynampar, 7);
+                r2ts(&mtime, r);
+                r = sqlite3_column_double(selbynampar, 8);
+                r2ts(&ctime, r);
+                checksum = (const char *)sqlite3_column_text(selbypar, 9);
+
+                rc = cb(id, uuid, name, type, size, mode, &atime, &mtime, &ctime,
+                        checksum, parent);
+                if(rc != 0) {
+                    break;
+                }
+            } else if(SQLITE_DONE == rc) {
+                rc = 0;
+                break;
+            } else {
+                rc = -EIO;
+                break;
+            }
+        }
+    }
+
+    pthread_mutex_unlock(&dbcache_mutex);
+
+    return rc;
 }
 
 /*int dbcache_rename(int64_t id, const char *name)

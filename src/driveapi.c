@@ -335,6 +335,9 @@ static void *drive_run(void *opaque)
                 rewind(tmp);
                 memset(linebuf, 0, (LINEBUF_MAX + 1) * sizeof(char));
                 while((line = fgets(linebuf, LINEBUF_MAX, tmp))) {
+                    if(!keep_running) {
+                        break;
+                    }
                     if(strncmp(line, "   \"id\": \"", 10)) {
                         continue;
                     }

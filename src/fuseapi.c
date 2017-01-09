@@ -358,7 +358,8 @@ static struct fuse_operations fapi_ops = {
 
 static pthread_t fapi_ft;
 static char fapi_mountpoint[PATH_MAX + 1];
-static char *fapi_argv[] = {"dfs", "-f", "-ofsname=drive", NULL};
+static char *fapi_argv[] = {"dfs", "-f", "-ofsname=drive",
+        fapi_mountpoint, NULL};
 struct fuse_args fapi_args = FUSE_ARGS_INIT(2, fapi_argv);
 static void *fuseapi_thread(void *);
 
@@ -384,7 +385,7 @@ int fuse_stop(void)
 static void *fuseapi_thread(void *opaque)
 {
     (void)opaque;
-    fuse_main(3, fapi_argv, &fapi_ops, NULL);
+    fuse_main(4, fapi_argv, &fapi_ops, NULL);
     return NULL;
 }
 
