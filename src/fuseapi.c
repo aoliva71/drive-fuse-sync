@@ -23,7 +23,7 @@
 static uid_t uid = 0;
 static gid_t gid = 0;
 
-static void fuseapi_getattr(const char *path, struct stat *st)
+static int fuseapi_getattr(const char *path, struct stat *st)
 {
     LOG("fuseapi_getattr: %s", path);
 
@@ -34,7 +34,6 @@ static void fuseapi_getattr(const char *path, struct stat *st)
             const char *checksum, int64_t parent) {
         (void)uuid;
         (void)name;
-        (void)refcount;
         (void)checksum;
         (void)parent;
         st->st_ino = id;
@@ -70,14 +69,33 @@ static void fuseapi_getattr(const char *path, struct stat *st)
         return 0;
     }
 
-    return dbcache_pinpoint(path, cb);
+    return dbcache_findbypath(path, cb);
 }
 
 static int fuseapi_mkdir(const char *path, mode_t mode)
 {
-    LOG("fuseapi_mkdir: %s", name);
+    LOG("fuseapi_mkdir: %s", path);
 
-    return dbcache_createdir(path, mode);
+    int cb(int64_t id, const char *uuid, const char *name, int type,
+            size_t size, mode_t mode, const struct timespec *atime,
+            const struct timespec *mtime, const struct timespec *ctime,
+            const char *checksum, int64_t parent)
+    {
+        (void)id;
+        (void)uuid;
+        (void)name;
+        (void)type;
+        (void)size;
+        (void)mode;
+        (void)atime;
+        (void)mtime;
+        (void)ctime;
+        (void)checksum;
+        (void)parent;
+        return 0;
+    }
+
+    return dbcache_mkdir(path, mode, cb);
 }
 
 /*static void fuseapi_unlink(const char *path)
@@ -105,14 +123,15 @@ static int fuseapi_mkdir(const char *path, mode_t mode)
     return dbcache_rm(path, cb);
 }*/
 
-static void fuseapi_rmdir(const char *path)
+static int fuseapi_rmdir(const char *path)
 {
-    LOG("fuseapi_rmdir: %s", name);
+    LOG("fuseapi_rmdir: %s", path);
     int cb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
             const char *checksum, int64_t parent) {
         (void)id;
+        (void)uuid;
         (void)name;
         (void)type;
         (void)size;
@@ -122,10 +141,9 @@ static void fuseapi_rmdir(const char *path)
         (void)ctime;
         (void)checksum;
         (void)parent;
-
-        return fscache_rmdir(uuid);
+        return 0;
     }
-    return dbcache_rmdir(name, parent, cb);
+    return dbcache_rmdir(path, cb);
 }
 
 /*static int fuseapi_rename(const char *oldpath, const char *path)
@@ -162,13 +180,25 @@ static void fuseapi_rmdir(const char *path)
 
     LOG("fuseapi_open: %s", path);
 
-    rc = fscache_open(path, fi->flags);
-    if(rc >= 0) {
-        fi->fh = rc;
-        return 0;
-    } else {
-        return rc;
+    int cb(int64_t id, const char *uuid, const char *name, int type,
+            size_t size, mode_t mode, const struct timespec *atime,
+            const struct timespec *mtime, const struct timespec *ctime,
+            const char *checksum, int64_t parent) {
+        (void)id;
+        (void)name;
+        (void)type;
+        (void)size;
+        (void)mode;
+        (void)atime;
+        (void)mtime;
+        (void)ctime;
+        (void)checksum;
+        (void)parent;
+
+        return fscache_open(uuid, fi->flags);
     }
+    
+    return dbcache_open(path, cb);
 }
 
 static int fuseapi_read(const char *path, char *buf, size_t size,
@@ -202,20 +232,20 @@ static int fuseapi_release(const char *path,
     return fscache_close(fi->fh);
 }*/
 
-static int fuseapi_readdir(const char *path, void *, fuse_fill_dir_t filler,
+static int fuseapi_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                  off_t off, struct fuse_file_info *fi)
 {
     struct stat st;
     LOG("fuseapi_readdir: %s", path);
+    (void)off;
     (void)fi;
 
     int cb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
-            int sync, const char *checksum, int64_t parent) {
+            const char *checksum, int64_t parent) {
 
         (void)uuid;
-        (void)sync;
         (void)checksum;
         (void)parent;
 
@@ -253,10 +283,11 @@ static int fuseapi_readdir(const char *path, void *, fuse_fill_dir_t filler,
 
         return 0;
     }
+
     filler(buf, ".", NULL, 0);
     filler(buf, "..", NULL, 0);
 
-    return dbcache_browse(path, cb);
+    return dbcache_listdir(path, cb);
 }
 
 /*static void fuseapi_create(const char *path,

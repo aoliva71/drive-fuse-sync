@@ -173,8 +173,8 @@ static void *drive_run(void *opaque)
         json_bool found;
         const char *sval;
 
-#define DID_MAX         63
-        char id[DID_MAX + 1];
+#define DUUID_MAX       63
+        char uuid[DUUID_MAX + 1];
 #define DNAME_MAX       255
         char name[DNAME_MAX + 1];
 #define DMIME_MAX       63
@@ -187,19 +187,18 @@ static void *drive_run(void *opaque)
         char ctimes[DTIME_MAX + 1];
         struct timespec mtime;
         struct timespec ctime;
-        int64_t version;
 #define DCKSUM_MAX      63
         char cksum[DCKSUM_MAX + 1];
         int pn;
         struct json_object *pitem;
-        char parent[DID_MAX + 1];
+        char parent[DUUID_MAX + 1];
 
 #define LINEBUF_MAX    255
         char linebuf[LINEBUF_MAX + 1];
         char *line;
         char *end;
 
-        memset(id, 0, (DID_MAX + 1) * sizeof(char));
+        memset(uuid, 0, (DUUID_MAX + 1) * sizeof(char));
         memset(name, 0, (DNAME_MAX + 1) * sizeof(char));
         memset(mime, 0, (DMIME_MAX + 1) * sizeof(char));
         isdir = 0;
@@ -209,11 +208,10 @@ static void *drive_run(void *opaque)
         memset(ctimes, 0, (DTIME_MAX + 1) * sizeof(char));
         memset(&mtime, 0, sizeof(struct timeval));
         memset(&ctime, 0, sizeof(struct timeval));
-        version = 0LL;
         memset(cksum, 0, (DCKSUM_MAX + 1) * sizeof(char));
         pn = 0;
         pitem = NULL;
-        memset(parent, 0, (DID_MAX + 1) * sizeof(char));
+        memset(parent, 0, (DUUID_MAX + 1) * sizeof(char));
         
 
         /* query details */
@@ -238,7 +236,7 @@ static void *drive_run(void *opaque)
                     found = json_object_object_get_ex(jdobj, "id", &val);
                     if(found) {
                         sval = json_object_get_string(val);
-                        strncpy(id, sval, DID_MAX);
+                        strncpy(uuid, sval, DUUID_MAX);
                     }
                     found = json_object_object_get_ex(jdobj, "name", &val);
                     if(found) {
@@ -273,10 +271,6 @@ static void *drive_run(void *opaque)
                         sval = json_object_get_string(val);
                         strncpy(ctimes, sval, DTIME_MAX);
                     }
-                    found = json_object_object_get_ex(jdobj, "version", &val);
-                    if(found) {
-                        version = json_object_get_int64(val);
-                    }
                     found = json_object_object_get_ex(jdobj, "md5Checksum",
                             &val);
                     if(found) {
@@ -289,7 +283,7 @@ static void *drive_run(void *opaque)
                         if(pn > 0) {
                             pitem = json_object_array_get_idx(val, 0);
                             sval = json_object_get_string(pitem);
-                            strncpy(parent, sval, DID_MAX);
+                            strncpy(parent, sval, DUUID_MAX);
                         }
                     }
                     
@@ -310,8 +304,8 @@ static void *drive_run(void *opaque)
         }
 
         if(!exclude) {
-            dbcache_update(id, name, isdir, size, &mtime, &ctime, version,
-                cksum, parent);
+            dbcache_update(uuid, name, isdir, size, &mtime, &ctime, cksum,
+                    parent);
         }
 
         /* scan directory */
@@ -325,7 +319,7 @@ static void *drive_run(void *opaque)
                     memset(fileurl, 0, (FILEURL_MAX + 1) * sizeof(char));
                     snprintf(fileurl, FILEURL_MAX,
                             "https://www.googleapis.com/drive/v3/files?"
-                            "q=%%27%s%%27+in+parents", id);
+                            "q=%%27%s%%27+in+parents", uuid);
                     rc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
                     rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
                     rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite);

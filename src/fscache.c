@@ -20,7 +20,6 @@
 static pthread_t fscache_thread;
 static void *fscache_run(void *);
 static char fscachedir[PATH_MAX + 1];
-static void fscache_update(const char *, int *);
 
 int fscache_start(const char *cachedir)
 {
@@ -40,19 +39,16 @@ int fscache_create(const char *uuid, int *fd)
 {
     int rc;
     char path[PATH_MAX + 1];
-    char relpath[PATH_MAX + 1];
 
     memset(path, 0, (PATH_MAX + 1) * sizeof(char));
-    memset(relpath, 0, (PATH_MAX + 1) * sizeof(char));
-    rc = dbcache_path(id, relpath, PATH_MAX);
-    if(0 == rc) {
-        fscache_update(relpath, NULL);
-        snprintf(path, PATH_MAX, "%s%s", fscachedir, relpath);
+    snprintf(path, PATH_MAX, "%s%s", fscachedir, uuid);
         
-        *fd = creat(path, (mode_t)0600);
-        if((*fd) < 0) {
-            rc = errno;
-        }
+    rc = creat(path, (mode_t)0600);
+    *fd = rc;
+    if(rc > 0) {
+        rc = 0;
+    } else {
+        rc = -errno;
     }
     
     return rc;
@@ -62,57 +58,17 @@ int fscache_open(const char *uuid, int flags, int *fd)
 {
     int rc;
     char path[PATH_MAX + 1];
-    char relpath[PATH_MAX + 1];
-    int found;
-    char eid[PATH_MAX + 1];
-    FILE *f;
-
-    int cb(int64_t id, const char *extid, const char *name, int type,
-            size_t size, mode_t mode, const struct timespec *atime,
-            const struct timespec *mtime, const struct timespec *ctime,
-            int sync, int refcount, const char *checksum, int64_t parent)
-    {
-        (void)id;
-        (void)name;
-        (void)type;
-        (void)size;
-        (void)mode;
-        (void)atime;
-        (void)mtime;
-        (void)ctime;
-        (void)sync;
-        (void)refcount;
-        (void)checksum;
-        (void)parent;
-        strncpy(eid, extid, PATH_MAX);
-        return 0;
-    }
 
     memset(path, 0, (PATH_MAX + 1) * sizeof(char));
-    memset(relpath, 0, (PATH_MAX + 1) * sizeof(char));
-    rc = dbcache_path(id, relpath, PATH_MAX);
-    if(0 == rc) {
-        fscache_update(relpath, &found);
-        snprintf(path, PATH_MAX, "%s%s", fscachedir, relpath);
+    snprintf(path, PATH_MAX, "%s%s", fscachedir, uuid);
 
-        if(!found) {
-            /* query extid */
-            memset(eid, 0, (PATH_MAX + 1) * sizeof(char));
-            dbcache_pinpoint(id, cb);
-            f = fopen(path, "w");
-            if(f) {
-                /* download extid */
-                drive_download(eid, f);
-                fclose(f);
-            }
-        }
-
-        LOG("opening: %s", path);
-        LOG("flags: %d 0x%x 0%o", flags, flags, flags);
-        *fd = open(path, flags);
-        if((*fd) < 0) {
-            rc = errno;
-        }
+    LOG("opening: %s", path);
+    rc = open(path, flags);
+    *fd = rc;
+    if(rc > 0) {
+        rc = 0;
+    } else {
+        rc = -errno;
     }
     
     return rc;
@@ -120,10 +76,16 @@ int fscache_open(const char *uuid, int flags, int *fd)
 
 int fscache_close(int fd)
 {
+    int rc;
     if(fd >= 0) {
-        close(fd);
+        rc = close(fd);
+        if(rc < 0) {
+            rc = -errno;
+        }
+    } else {
+        rc = -EIO;
     }
-    return 0;
+    return rc;
 }
 
 int fscache_read(int fd, fscache_read_cb_t *cb, off_t off, size_t len)
@@ -180,18 +142,13 @@ int fscache_rm(const char *uuid)
 {
     int rc;
     char path[PATH_MAX + 1];
-    char relpath[PATH_MAX + 1];
 
     memset(path, 0, (PATH_MAX + 1) * sizeof(char));
-    memset(relpath, 0, (PATH_MAX + 1) * sizeof(char));
-    rc = dbcache_path(id, relpath, PATH_MAX);
-    if(0 == rc) {
-        snprintf(path, PATH_MAX, "%s%s", fscachedir, relpath);
+    snprintf(path, PATH_MAX, "%s%s", fscachedir, uuid);
 
-        rc = unlink(path);
-        if(rc != 0) {
-            rc = errno;
-        }
+    rc = unlink(path);
+    if(rc != 0) {
+        rc = -errno;
     }
 
     return rc;
@@ -205,6 +162,8 @@ int fscache_size(int fd, size_t *sz)
     rc = fstat(fd, &st);
     if(0 == rc) {
         *sz = st.st_size;
+    } else {
+        rc = -errno;
     }
     return rc;
 }
@@ -213,38 +172,5 @@ static void *fscache_run(void *opaque)
 {
     (void)opaque;
     return NULL;
-}
-
-static void fscache_update(const char *rel, int *found)
-{
-    int rc;
-    char path[PATH_MAX + 1];
-    char *slash;
-    const char *tmp;
-    struct stat st;
-
-    /* create cache dirs if not exist */
-    memset(path, 0, (PATH_MAX + 1) * sizeof(char));
-    snprintf(path, PATH_MAX, "%s%s", fscachedir, rel);
-    tmp = path;
-    tmp += strlen(fscachedir);
-    tmp++;
-
-    while(*tmp) {
-        slash = strchr(tmp, '/');
-        if(NULL == slash) {
-            break;
-        }
-        *slash = 0;
-        mkdir(path, (mode_t)0700);
-        *slash = '/';
-        tmp = slash;
-        tmp++;
-    }
-    
-    rc = stat(path, &st);
-    if(found) {
-        *found = (rc != 0) ? 0 : 1;
-    }
 }
 

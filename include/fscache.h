@@ -7,13 +7,10 @@
 int fscache_start(const char *);
 int fscache_stop(void);
 
-int fscache_mkdir(int64_t);
-int fscache_rmdir(int64_t);
-
-int fscache_create(int64_t, int *);
-int fscache_open(int64_t, int, int *);
+int fscache_create(const char *, int *);
+int fscache_open(const char *, int, int *);
 int fscache_close(int);
-int fscache_rm(int64_t);
+int fscache_rm(const char *);
 
 typedef int (fscache_read_cb_t)(const void *, size_t);
 int fscache_read(int, fscache_read_cb_t *, off_t, size_t);
