@@ -619,7 +619,6 @@ int dbcache_findbypath(const char *cpath, dbcache_cb_t *cb)
     int rc;
     int64_t id;
     const char *uuid;
-    const char *name;
     int type;
     size_t size;
     mode_t mode;
@@ -636,20 +635,19 @@ int dbcache_findbypath(const char *cpath, dbcache_cb_t *cb)
         rc = sqlite3_bind_int64(selbyid, 1, id);
         rc = sqlite3_step(selbyid);
         if(SQLITE_ROW == rc) {
-            uuid = (const char *)sqlite3_column_text(selbyid, 1);
-            name = (const char *)sqlite3_column_text(selbyid, 2);
-            type = sqlite3_column_int(selbyid, 3);
-            size = sqlite3_column_int64(selbyid, 4);
-            mode = sqlite3_column_int(selbyid, 5);
-            r = sqlite3_column_double(selbyid, 6);
+            uuid = (const char *)sqlite3_column_text(selbyid, 0);
+            type = sqlite3_column_int(selbyid, 1);
+            size = sqlite3_column_int64(selbyid, 2);
+            mode = sqlite3_column_int(selbyid, 3);
+            r = sqlite3_column_double(selbyid, 4);
             r2ts(&atime, r);
-            r = sqlite3_column_double(selbyid, 7);
+            r = sqlite3_column_double(selbyid, 5);
             r2ts(&mtime, r);
-            r = sqlite3_column_double(selbyid, 8);
+            r = sqlite3_column_double(selbyid, 6);
             r2ts(&ctime, r);
-            checksum = (const char *)sqlite3_column_text(selbyid, 9);
-            parent = sqlite3_column_int64(selbyid, 10);
-            rc = cb(id, uuid, name, type, size, mode, &atime, &mtime, &ctime,
+            checksum = (const char *)sqlite3_column_text(selbyid, 8);
+            parent = sqlite3_column_int64(selbyid, 9);
+            rc = cb(id, uuid, "/", type, size, mode, &atime, &mtime, &ctime,
                     checksum, parent);
         } else {
             rc = -ENOENT;
@@ -675,19 +673,22 @@ int dbcache_findbypath(const char *cpath, dbcache_cb_t *cb)
             if(SQLITE_ROW == rc) {
                 id = sqlite3_column_int64(selbynampar, 0);
                 uuid = (const char *)sqlite3_column_text(selbynampar, 1);
-                name = (const char *)sqlite3_column_text(selbynampar, 2);
-                type = sqlite3_column_int(selbynampar, 3);
-                size = sqlite3_column_int64(selbynampar, 4);
-                mode = sqlite3_column_int(selbynampar, 5);
-                r = sqlite3_column_double(selbynampar, 6);
+                type = sqlite3_column_int(selbynampar, 2);
+                size = sqlite3_column_int64(selbynampar, 3);
+                mode = sqlite3_column_int(selbynampar, 4);
+                r = sqlite3_column_double(selbynampar, 5);
                 r2ts(&atime, r);
-                r = sqlite3_column_double(selbynampar, 7);
+                r = sqlite3_column_double(selbynampar, 6);
                 r2ts(&mtime, r);
-                r = sqlite3_column_double(selbynampar, 8);
+                r = sqlite3_column_double(selbynampar, 7);
                 r2ts(&ctime, r);
                 checksum = (const char *)sqlite3_column_text(selbynampar, 9);
-                if(!pend) {
-                    rc = cb(id, uuid, name, type, size, mode, &atime, &mtime,
+                if(pend) {
+                    pbegin = pend;
+                    pbegin++;
+                    parent = id;
+                } else {
+                    rc = cb(id, uuid, pbegin, type, size, mode, &atime, &mtime,
                             &ctime, checksum, parent);
                     break;
                 }
@@ -785,13 +786,17 @@ int dbcache_listdir(const char *cpath, dbcache_cb_t *cb)
         rc = sqlite3_bind_int64(selbynampar, 2, parent);
         rc = sqlite3_step(selbynampar);
         if(SQLITE_ROW == rc) {
-            parent = sqlite3_column_int64(selbynampar, 10);
-            if(!pend) {
+            parent = sqlite3_column_int64(selbynampar, 0);
+            if(pend) {
+                pbegin = pend;
+                pbegin++;
+            } else {
                 rc = 0;
                 break;
             }
         } else {
             rc = -ENOENT;
+            break;
         }
     }
 
@@ -813,7 +818,7 @@ int dbcache_listdir(const char *cpath, dbcache_cb_t *cb)
                 r2ts(&mtime, r);
                 r = sqlite3_column_double(selbynampar, 8);
                 r2ts(&ctime, r);
-                checksum = (const char *)sqlite3_column_text(selbypar, 9);
+                checksum = (const char *)sqlite3_column_text(selbypar, 10);
 
                 rc = cb(id, uuid, name, type, size, mode, &atime, &mtime, &ctime,
                         checksum, parent);
