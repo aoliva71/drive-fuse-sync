@@ -14,6 +14,7 @@
 
 #include "dbcache.h"
 #include "fscache.h"
+#include "driveapi.h"
 
 #include <stdarg.h>
 #define LOG(...) printf(__VA_ARGS__); printf("\n")
@@ -173,7 +174,7 @@ static int fuseapi_rmdir(const char *path)
     return dbcache_rename(oldpath, newpath, cb);
 }*/
 
-/*static void fuseapi_open(const char *path,
+static int fuseapi_open(const char *path,
               struct fuse_file_info *fi)
 {
     int rc;
@@ -184,6 +185,9 @@ static int fuseapi_rmdir(const char *path)
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
             const char *checksum, int64_t parent) {
+        struct stat st;
+        FILE *f;
+
         (void)id;
         (void)name;
         (void)type;
@@ -195,10 +199,23 @@ static int fuseapi_rmdir(const char *path)
         (void)checksum;
         (void)parent;
 
-        return fscache_open(uuid, fi->flags);
+        if(-ENOENT == fscache_stat(uuid, &st)) {
+            f = fscache_fopen(uuid);
+            if(f) {
+                drive_download(uuid, f);
+                fscache_fclose(f);
+            }
+        }
+
+        rc = fscache_open(uuid, fi->flags);
+        if(rc >= 0) {
+            fi->fh = rc;
+            rc = 0;
+        }
+        return rc;
     }
     
-    return dbcache_open(path, cb);
+    return dbcache_findbypath(path, cb);
 }
 
 static int fuseapi_read(const char *path, char *buf, size_t size,
@@ -209,13 +226,13 @@ static int fuseapi_read(const char *path, char *buf, size_t size,
     return fscache_read(fi->fh, buf, off, size);
 }
 
-static int fuseapi_write(const char *path, const char *buf,
+/*static int fuseapi_write(const char *path, const char *buf,
                size_t size, off_t off, struct fuse_file_info *fi)
 {
     LOG("fuseapi_write: %s", path);
 
     return fscache_write(fi->fh, buf, off, size);
-}
+}*/
 
 static int fuseapi_release(const char *path,
               struct fuse_file_info *fi)
@@ -226,11 +243,11 @@ static int fuseapi_release(const char *path,
 
     if(fi->flags & O_ACCMODE) {
         fscache_size(fi->fh, &size);
-        dbcache_resize(ino, size);
+        //dbcache_resize(ino, size);
     }
 
     return fscache_close(fi->fh);
-}*/
+}
 
 static int fuseapi_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                  off_t off, struct fuse_file_info *fi)
@@ -335,12 +352,12 @@ static struct fuse_operations fapi_ops = {
 //    .chmod = fuseapi_chmod,
 //    .chown = fuseapi_chown,
 //    .truncate
-//    .open = fuseapi_open,
-//    .read = fuseapi_read,
+    .open = fuseapi_open,
+    .read = fuseapi_read,
 //    .write = fuseapi_write,
 //    .statfs = fuseapi_statfs,
 //    .flush = fuseapi_flush,
-//    .release = fuseapi_release,
+    .release = fuseapi_release,
 //    .fsync
 //    .opendir
     .readdir = fuseapi_readdir,

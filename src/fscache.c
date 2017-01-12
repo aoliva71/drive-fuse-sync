@@ -35,43 +35,25 @@ int fscache_stop(void)
     return 0;
 }
 
-int fscache_create(const char *uuid, int *fd)
+int fscache_create(const char *uuid)
 {
-    int rc;
     char path[PATH_MAX + 1];
 
     memset(path, 0, (PATH_MAX + 1) * sizeof(char));
-    snprintf(path, PATH_MAX, "%s%s", fscachedir, uuid);
+    snprintf(path, PATH_MAX, "%s/%s", fscachedir, uuid);
         
-    rc = creat(path, (mode_t)0600);
-    *fd = rc;
-    if(rc > 0) {
-        rc = 0;
-    } else {
-        rc = -errno;
-    }
-    
-    return rc;
+    return creat(path, (mode_t)0600);
 }
 
-int fscache_open(const char *uuid, int flags, int *fd)
+int fscache_open(const char *uuid, int flags)
 {
-    int rc;
     char path[PATH_MAX + 1];
 
     memset(path, 0, (PATH_MAX + 1) * sizeof(char));
-    snprintf(path, PATH_MAX, "%s%s", fscachedir, uuid);
+    snprintf(path, PATH_MAX, "%s/%s", fscachedir, uuid);
 
     LOG("opening: %s", path);
-    rc = open(path, flags);
-    *fd = rc;
-    if(rc > 0) {
-        rc = 0;
-    } else {
-        rc = -errno;
-    }
-    
-    return rc;
+    return open(path, flags);
 }
 
 int fscache_close(int fd)
@@ -88,51 +70,25 @@ int fscache_close(int fd)
     return rc;
 }
 
-int fscache_read(int fd, fscache_read_cb_t *cb, off_t off, size_t len)
+int fscache_read(int fd, char *buf, off_t off, size_t len)
 {
-    int rc;
-    void *buf;
     off_t noff;
-    size_t l;
-
-    LOG("off=%lld, len=%lld", (long long int)off, (long long int)len);
-    buf = malloc(len);
-    if(NULL == buf) {
-        return -1;
-    }
 
     noff = lseek(fd, off, SEEK_SET);
     if(noff != off) {
         LOG("unable to seek");
-        free(buf);
         return -1;
     }
 
-    LOG("read %d, %p, %lld", fd, buf, (long long int)len);
-    rc = read(fd, buf, len);
-    if(rc < 0) {
-        LOG("errno: %d", errno);
-        free(buf);
-        return -1;
-    }
-    l = rc;
-    rc = cb(buf, l);
-    free(buf);
-    if(rc != 0) {
-        return -1;
-    }
-
-    return 0;
+    return read(fd, buf, len);
 }
 
-int fscache_write(int fd, fscache_write_cb_t *cb, const void *buf, off_t off,
-        size_t len)
+int fscache_write(int fd, const char *buf, off_t off, size_t len)
 {
     int rc;
 
     rc = lseek(fd, off, SEEK_SET);
     rc = write(fd, buf, len);
-    rc = cb(buf, len);
     (void)rc;
 
     return 0;
@@ -144,7 +100,7 @@ int fscache_rm(const char *uuid)
     char path[PATH_MAX + 1];
 
     memset(path, 0, (PATH_MAX + 1) * sizeof(char));
-    snprintf(path, PATH_MAX, "%s%s", fscachedir, uuid);
+    snprintf(path, PATH_MAX, "%s/%s", fscachedir, uuid);
 
     rc = unlink(path);
     if(rc != 0) {
@@ -167,6 +123,37 @@ int fscache_size(int fd, size_t *sz)
     }
     return rc;
 }
+
+int fscache_stat(const char *uuid, struct stat *st)
+{
+    int rc;
+    char path[PATH_MAX + 1];
+
+    memset(path, 0, (PATH_MAX + 1) * sizeof(char));
+    snprintf(path, PATH_MAX, "%s/%s", fscachedir, uuid);
+
+    rc = stat(path, st);
+    if(-1 == rc) {
+        rc = -errno;
+    }
+    return rc;
+}
+
+FILE *fscache_fopen(const char *uuid)
+{
+    char path[PATH_MAX + 1];
+
+    memset(path, 0, (PATH_MAX + 1) * sizeof(char));
+    snprintf(path, PATH_MAX, "%s/%s", fscachedir, uuid);
+
+    return fopen(path, "w");
+}
+
+void fscache_fclose(FILE *f)
+{
+    fclose(f);
+}
+
 
 static void *fscache_run(void *opaque)
 {
