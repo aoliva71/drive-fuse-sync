@@ -3,7 +3,6 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <malloc.h>
-#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -373,37 +372,20 @@ static struct fuse_operations fapi_ops = {
 //    .utimens
 };
 
-static pthread_t fapi_ft;
 static char fapi_mountpoint[PATH_MAX + 1];
 static char *fapi_argv[] = {"dfs", "-f", "-ofsname=drive",
         fapi_mountpoint, NULL};
 struct fuse_args fapi_args = FUSE_ARGS_INIT(2, fapi_argv);
-static void *fuseapi_thread(void *);
 
-int fuse_start(const char *mountpoint)
+int fuseapi_run(const char *mountpoint)
 {
     uid = getuid();
     gid = getgid();
     memset(fapi_mountpoint, 0, (PATH_MAX + 1) * sizeof(char));
     strncpy(fapi_mountpoint, mountpoint, PATH_MAX);
-    pthread_create(&fapi_ft, NULL, fuseapi_thread, NULL);
-
-    return 0;
-}
-
-int fuse_stop(void)
-{
-    /* join will keep pending :( */
-    pthread_join(fapi_ft, NULL);
-
-    return 0;
-}
-
-static void *fuseapi_thread(void *opaque)
-{
-    (void)opaque;
     fuse_main(4, fapi_argv, &fapi_ops, NULL);
-    return NULL;
+    printf("*** fuse_main exited ***\n");
+    return 0;
 }
 
 #undef LOG

@@ -1,7 +1,6 @@
 
 #include <getopt.h>
 #include <limits.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,9 +35,6 @@ struct _conf
 };
 typedef struct _conf conf_t;
 
-static int keep_running = 0;
-static void killer(int);
-
 static void set_defaults(conf_t *);
 static void parse_command_line(conf_t *, int, char *[]);
 static void write_pid(const char *);
@@ -66,8 +62,6 @@ int main(int argc, char *argv[])
     mkdir(conf.mountpoint, (mode_t)0700);
     openlog(PACKAGE_NAME, LOG_CONS|LOG_PID, LOG_DAEMON);
 
-    signal(SIGINT, killer);
-
     write_pid(conf.pidfile);
 
     syslog(LOG_INFO, "starting");
@@ -94,19 +88,12 @@ int main(int argc, char *argv[])
         "c", 0755, 1, "c========", 1);
     */
 
-    fuse_start(conf.mountpoint);
 
     drive_start();
 
-    for(keep_running = 1; keep_running;) {
-        /* check remote changes */
-        /* check local changes */
-        sleep(1);
-    }
+    fuseapi_run(conf.mountpoint);
 
     drive_stop();
-
-    fuse_stop();
 
     dbcache_close();
 
@@ -116,17 +103,6 @@ int main(int argc, char *argv[])
     closelog();
 
     return 0;
-}
-
-static void killer(int s)
-{
-    if(SIGINT == s) {
-        if(keep_running) {
-            keep_running = 0;
-        } else {
-            exit(0);
-        }
-    }
 }
 
 static void set_defaults(conf_t *conf)
