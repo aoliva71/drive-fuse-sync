@@ -17,7 +17,7 @@
 #define TOKENTYPE_MAX   31
 static char token_type[TOKENTYPE_MAX + 1];
 
-#define TOKEN_MAX       127
+#define TOKEN_MAX       1023
 static char access_token[TOKEN_MAX + 1];
 static char refresh_token[TOKEN_MAX + 1];
 
@@ -31,6 +31,8 @@ static pthread_t drive_thread;
 
 static int keep_running;
 static void *drive_run(void *);
+
+static struct curl_slist *chunk;
 
 int drive_setup(void)
 {
@@ -85,6 +87,7 @@ int drive_setup(void)
 
 int drive_start(void)
 {
+    chunk = NULL;
     curl_global_init(CURL_GLOBAL_ALL);
 
     keep_running = 1;
@@ -107,21 +110,12 @@ int drive_download(const char *id, FILE *f)
 {
     CURL *curl;
     CURLcode rc;
-    struct curl_slist *chunk;
-#define AUTH_MAX    127
-    char auth[AUTH_MAX + 1];
 #define FILEURL_MAX     255
-        char fileurl[FILEURL_MAX + 1];
-
-    chunk = NULL;
-    memset(auth, 0, (AUTH_MAX + 1) * sizeof(char));
-    snprintf(auth, AUTH_MAX, "Authorization: %s %s", token_type,
-            access_token);
-    chunk = curl_slist_append(chunk, auth);
-
+    char fileurl[FILEURL_MAX + 1];
 
     curl = curl_easy_init();
     if(curl) {
+        /*rc = curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);*/
         memset(fileurl, 0, (FILEURL_MAX + 1) * sizeof(char));
         snprintf(fileurl, FILEURL_MAX,
                 "https://www.googleapis.com/drive/v3/files/%s?alt=media", id);
@@ -130,6 +124,7 @@ int drive_download(const char *id, FILE *f)
         rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite);
         rc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
         rc = curl_easy_perform(curl);
+        printf("download %d\n", rc);
         (void)rc;
         curl_easy_cleanup(curl);
     }
@@ -140,8 +135,7 @@ int drive_download(const char *id, FILE *f)
 static void *drive_run(void *opaque)
 {
     time_t now;
-    struct curl_slist *chunk;
-#define AUTH_MAX    127
+#define AUTH_MAX    1023
     char auth[AUTH_MAX + 1];
 
 #define DATA_MAX    511

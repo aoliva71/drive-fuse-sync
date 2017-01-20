@@ -198,18 +198,20 @@ static int fuseapi_open(const char *path,
         (void)checksum;
         (void)parent;
 
-        if(-ENOENT == fscache_stat(uuid, &st)) {
+        rc = fscache_stat(uuid, &st);
+        if(-ENOENT == rc) {
             f = fscache_fopen(uuid);
             if(f) {
-                drive_download(uuid, f);
+                rc = drive_download(uuid, f);
                 fscache_fclose(f);
             }
         }
-
-        rc = fscache_open(uuid, fi->flags);
-        if(rc >= 0) {
-            fi->fh = rc;
-            rc = 0;
+        if(0 == rc) {
+            rc = fscache_open(uuid, fi->flags);
+            if(rc >= 0) {
+                fi->fh = rc;
+                rc = 0;
+            }
         }
         return rc;
     }
@@ -384,7 +386,7 @@ int fuseapi_run(const char *mountpoint)
     memset(fapi_mountpoint, 0, (PATH_MAX + 1) * sizeof(char));
     strncpy(fapi_mountpoint, mountpoint, PATH_MAX);
     fuse_main(4, fapi_argv, &fapi_ops, NULL);
-    printf("*** fuse_main exited ***\n");
+
     return 0;
 }
 
