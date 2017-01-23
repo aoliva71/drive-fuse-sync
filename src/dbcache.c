@@ -39,6 +39,9 @@ static sqlite3_stmt *iresize = NULL;
 static sqlite3_stmt *ichatime = NULL;
 static sqlite3_stmt *ichmtime = NULL;
 
+static sqlite3_stmt *selchange = NULL;
+static sqlite3_stmt *updchange = NULL;
+
 static void ts2r(double *, const struct timespec *);
 static void r2ts(struct timespec *, double);
 
@@ -156,6 +159,16 @@ int dbcache_setup_schema(void)
     }
     sqlite3_finalize(sel);
 
+    sqlite3_exec(sql, "CREATE TABLE IF NOT EXISTS dfs_change ( "
+            "id TEXT NOT NULL )", NULL, NULL, NULL);
+    sqlite3_prepare_v2(sql, "SELECT id FROM dfs_change", -1, &sel, NULL);
+    rc = sqlite3_step(sel);
+    if(SQLITE_DONE == rc) {
+        rc = sqlite3_exec(sql, "INSERT INTO dfs_change ( id ) VALUES ( '' )",
+            NULL, NULL, NULL);
+    }
+    sqlite3_finalize(sel);
+
     return 0;
 }
 
@@ -235,6 +248,12 @@ int dbcache_setup(void)
 
     sqlite3_prepare_v2(sql, "UPDATE dfs_entry SET mtime = ? WHERE id = ? ",
         -1, &ichmtime, NULL);
+
+    sqlite3_prepare_v2(sql, "SELECT id FROM dfs_change", -1, &selchange,
+        NULL);
+
+    sqlite3_prepare_v2(sql, "UPDATE dfs_change SET id = ? ", -1, &updchange,
+        NULL);
 
     return 0;
 }
@@ -1050,6 +1069,36 @@ int dbcache_rmref(int64_t id)
 
     return rc;
 }*/
+
+int dbcache_change_load(char *changeid, size_t len)
+{
+    int rc;
+
+    rc = -1;
+    if(changeid) {
+        rc = sqlite3_reset(selchange);
+        rc = sqlite3_step(selchange);
+        if(SQLITE_ROW == rc) {
+            strncpy(changeid, sqlite3_column_text(selchange, 0), len);
+            rc = 0;
+        } else {
+            *changeid = 0;
+            rc = -1;
+        }
+    }
+
+    return rc;
+}
+
+int dbcache_change_store(const char *changeid)
+{
+    int rc;
+
+    rc = sqlite3_reset(updchange);
+    rc = sqlite3_bind_text(updchange, 1, changeid, -1, NULL);
+    rc = sqlite3_step(updchange);
+    return (SQLITE_ROW == rc) ? 0 : -1;
+}
 
 static void ts2r(double *r, const struct timespec *tv)
 {

@@ -26,6 +26,8 @@ static time_t expiration_time;
 
 static int get_tokens(const char *);
 static int refresh_tokens(void);
+static int get_start_token(char *, size_t);
+static int get_changes(char *, size_t, int *);
 
 static pthread_t drive_thread;
 
@@ -147,6 +149,10 @@ static void *drive_run(void *opaque)
 
 #define DATA_MAX    511
     char data[DATA_MAX + 1];
+
+#define CHANGETOKEN_MAX 63
+    char changeid[CHANGETOKEN_MAX + 1];
+    int anychange;
 
     size_t writecb(void *ptr, size_t size, size_t n, void *stream)
     {
@@ -361,6 +367,8 @@ static void *drive_run(void *opaque)
 
     (void)opaque;
 
+    memset(changeid, 0, (CHANGETOKEN_MAX + 1) * sizeof(char));
+
     dbcache_auth_load(token_type, TOKENTYPE_MAX, access_token, TOKEN_MAX,
             refresh_token, TOKEN_MAX, &expires_in, &expiration_time);
 
@@ -381,15 +389,34 @@ static void *drive_run(void *opaque)
         auth_chunk = curl_slist_append(auth_chunk, auth);
         pthread_mutex_unlock(&auth_mutex);
 
-        /* get a changeid */
+        /* load changeid from db */
+        dbcache_change_load(changeid, CHANGETOKEN_MAX);
 
-        /* scan drive */
-        recurse("root");
+        if(0 == strlen(changeid)) {
+            /* get start token */
+            get_start_token(changeid, CHANGETOKEN_MAX);
+            /* no changeid, scan drive */
+            recurse("root");
+            /* save start token */
+            dbcache_change_store(changeid);
+        }
 
-        /* listen to changes since changeid */
+        while(keep_running) {
+            /* get changes since changeid */
+            anychange = 0;
+            get_changes(changeid, CHANGETOKEN_MAX, &anychange);
+            if(anychange) {
+                dbcache_change_store(changeid);
+                continue;
+            }
 
-        while(keep_running)
-        sleep(1);
+            while(keep_running) {
+                /* if activity detected exit loop */
+                sleep(1);
+            }
+
+            /* if activity detected, reset flag and exit loop */
+        }
     }
 
     return NULL;
@@ -494,4 +521,70 @@ static int authorize(const char *grant_type, const char *key, const char *token)
     return 0;
 }
 
+static int get_start_token(char *changeid, size_t len)
+{
+    CURL *curl;
+    CURLcode cc;
+    int rc;
+    char fileurl[FILEURL_MAX + 1];
+    char body[DATA_MAX + 1];
+    json_object *jbody;
+    json_object *jval;
+    json_bool found;
+    const char *sval;
+
+    size_t writecb(void *ptr, size_t size, size_t n, void *stream)
+    {
+        size_t len;
+
+        len = size * n;
+        if(len > DATA_MAX) {
+            len = DATA_MAX;
+        }
+        memcpy(stream, ptr, len);
+
+        return len;
+    }
+
+    (void)rc;
+    memset(body, 0, (DATA_MAX + 1) * sizeof(char));
+
+    curl = curl_easy_init();
+    if(curl) {
+        memset(fileurl, 0, (FILEURL_MAX + 1) * sizeof(char));
+        snprintf(fileurl, FILEURL_MAX,
+                "https://www.googleapis.com/drive/v3/changes/startPageToken");
+        cc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
+        pthread_mutex_lock(&auth_mutex);
+        cc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, auth_chunk);
+        pthread_mutex_unlock(&auth_mutex);
+        cc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writecb);
+        cc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, body);
+        cc = curl_easy_perform(curl);
+        curl_easy_cleanup(curl);
+    }
+
+    jbody = json_tokener_parse(body);
+    if(jbody) {
+        found = json_object_object_get_ex(jbody, "kind", &jval);
+        if(found) {
+            sval = json_object_get_string(jval);
+            /* must match "drive#startPageToken" */
+        }
+        found = json_object_object_get_ex(jbody, "startPageToken", &jval);
+        if(found) {
+            sval = json_object_get_string(jval);
+            strncpy(changeid, sval, len);
+        }
+    }
+    return 0;
+}
+
+static int get_changes(char *changeid, size_t len, int *anychange)
+{
+    (void)changeid;
+    (void)len;
+    *anychange = 0;
+    return 0;
+}
 

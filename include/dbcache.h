@@ -47,5 +47,8 @@ int dbcache_rmref(int64_t);
 
 int dbcache_path(int64_t, char *, size_t);*/
 
+int dbcache_change_load(char *, size_t);
+int dbcache_change_store(const char *);
+
 #endif /* _DBCACHE_H_ */
 
