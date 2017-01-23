@@ -73,22 +73,6 @@ int main(int argc, char *argv[])
         dbcache_setup();
     }
 
-    /*
-    dbcache_createdir(&parent, "0000000a-000a-000a-000a-00000000000a",
-        "a", 0755, 1, "a========", 1);
-    dbcache_createdir(&id, "000000aa-00aa-00aa-00aa-0000000000aa",
-        "aa", 0755, 1, "aa=======", parent);
-    dbcache_createdir(&id, "000000ab-00ab-00ab-00ab-0000000000ab",
-        "ab", 0755, 1, "ab=======", parent);
-    dbcache_createdir(&id, "000000ac-00ac-00ac-00ac-0000000000ac",
-        "ac", 0755, 1, "ac=======", parent);
-    dbcache_createdir(&id, "0000000b-000b-000b-000b-00000000000b",
-        "b", 0755, 1, "b========", 1);
-    dbcache_createdir(&id, "0000000c-000c-000c-000c-00000000000c",
-        "c", 0755, 1, "c========", 1);
-    */
-
-
     drive_start();
 
     fuseapi_run(conf.mountpoint);
