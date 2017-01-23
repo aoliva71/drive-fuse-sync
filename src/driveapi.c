@@ -32,7 +32,8 @@ static pthread_t drive_thread;
 static int keep_running;
 static void *drive_run(void *);
 
-static struct curl_slist *chunk;
+static pthread_mutex_t auth_mutex;
+static struct curl_slist *auth_chunk;
 
 int drive_setup(void)
 {
@@ -87,8 +88,10 @@ int drive_setup(void)
 
 int drive_start(void)
 {
-    chunk = NULL;
+    auth_chunk = NULL;
     curl_global_init(CURL_GLOBAL_ALL);
+
+    pthread_mutex_init(&auth_mutex, NULL);
 
     keep_running = 1;
     pthread_create(&drive_thread, NULL, drive_run, NULL);
@@ -100,6 +103,8 @@ int drive_stop(void)
 {
     keep_running = 0;
     pthread_join(drive_thread, NULL);
+
+    pthread_mutex_destroy(&auth_mutex);
 
     curl_global_cleanup();
 
@@ -120,7 +125,9 @@ int drive_download(const char *id, FILE *f)
         snprintf(fileurl, FILEURL_MAX,
                 "https://www.googleapis.com/drive/v3/files/%s?alt=media", id);
         rc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
-        rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
+        pthread_mutex_lock(&auth_mutex);
+        rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, auth_chunk);
+        pthread_mutex_unlock(&auth_mutex);
         rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite);
         rc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
         rc = curl_easy_perform(curl);
@@ -218,7 +225,9 @@ static void *drive_run(void *opaque)
                 "modifiedTime,createdTime,version,md5Checksum,parents", alias);
             printf("%s - %s\n", alias, fileurl);
             rc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
-            rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
+            pthread_mutex_lock(&auth_mutex);
+            rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, auth_chunk);
+            pthread_mutex_unlock(&auth_mutex);
             rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writecb);
             memset(data, 0, (DATA_MAX + 1) * sizeof(char));
             rc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, data);
@@ -315,7 +324,9 @@ static void *drive_run(void *opaque)
                             "https://www.googleapis.com/drive/v3/files?"
                             "q=%%27%s%%27+in+parents", uuid);
                     rc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
-                    rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
+                    pthread_mutex_lock(&auth_mutex);
+                    rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, auth_chunk);
+                    pthread_mutex_unlock(&auth_mutex);
                     rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite);
                     rc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, tmp);
                     rc = curl_easy_perform(curl);
@@ -350,9 +361,10 @@ static void *drive_run(void *opaque)
 
     (void)opaque;
 
+    dbcache_auth_load(token_type, TOKENTYPE_MAX, access_token, TOKEN_MAX,
+            refresh_token, TOKEN_MAX, &expires_in, &expiration_time);
+
     while(keep_running) {
-        dbcache_auth_load(token_type, TOKENTYPE_MAX, access_token, TOKEN_MAX,
-                refresh_token, TOKEN_MAX, &expires_in, &expiration_time);
         time(&now);
         if(now >= expiration_time) {
             refresh_tokens();
@@ -361,11 +373,13 @@ static void *drive_run(void *opaque)
         }
 
         /* setup authorization */
-        chunk = NULL;
+        pthread_mutex_lock(&auth_mutex);
+        auth_chunk = NULL;
         memset(auth, 0, (AUTH_MAX + 1) * sizeof(char));
         snprintf(auth, AUTH_MAX, "Authorization: %s %s", token_type,
                 access_token);
-        chunk = curl_slist_append(chunk, auth);
+        auth_chunk = curl_slist_append(auth_chunk, auth);
+        pthread_mutex_unlock(&auth_mutex);
 
         /* get a changeid */
 
@@ -474,7 +488,8 @@ static int authorize(const char *grant_type, const char *key, const char *token)
         }
     }
     
-    expiration_time += expires_in;
+    /* do not wait until last minute before refreshing */
+    expiration_time += (5 * expires_in) / 6;
 
     return 0;
 }
