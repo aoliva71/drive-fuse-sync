@@ -37,6 +37,14 @@ static void *drive_run(void *);
 static pthread_mutex_t auth_mutex;
 static struct curl_slist *auth_chunk;
 
+struct _json_context
+{
+    json_tokener *tokener;
+    json_object **pointer;
+};
+typedef struct _json_context json_context_t;
+size_t parse_json(void *, size_t, size_t, void *);
+
 int drive_setup(void)
 {
 #define DATA_MAX    511
@@ -133,7 +141,6 @@ int drive_download(const char *id, FILE *f)
         rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite);
         rc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
         rc = curl_easy_perform(curl);
-        printf("download %d\n", rc);
         (void)rc;
         curl_easy_cleanup(curl);
     }
@@ -162,10 +169,16 @@ void recurse(const char *alias)
     FILE *tmp;
 #define FILEURL_MAX     255
     char fileurl[FILEURL_MAX + 1];
-    json_object *jdobj;
-    struct json_object *val;
+    json_context_t context;
+    json_tokener *tokener;
+    json_object *jroot;
+    json_object *jfiles;
+    json_object *jfile;
+    json_object *jval;
     json_bool found;
     const char *sval;
+    int i, nfiles;
+    json_object *id;
 
 #define DUUID_MAX       63
     char uuid[DUUID_MAX + 1];
@@ -214,90 +227,93 @@ void recurse(const char *alias)
     /* query details */
     curl = curl_easy_init();
     if(curl) {
-        memset(fileurl, 0, (FILEURL_MAX + 1) * sizeof(char));
-        snprintf(fileurl, FILEURL_MAX,
-            "https://www.googleapis.com/drive/v3/files/%s?"
-            "fields=id,name,mimeType,size,"
-            "modifiedTime,createdTime,version,md5Checksum,parents", alias);
-        printf("%s - %s\n", alias, fileurl);
-        rc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
-        pthread_mutex_lock(&auth_mutex);
-        rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, auth_chunk);
-        pthread_mutex_unlock(&auth_mutex);
-        rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writecb);
-        memset(data, 0, (DATA_MAX + 1) * sizeof(char));
-        rc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, data);
-        rc = curl_easy_perform(curl);
-        if(CURLE_OK == rc) {
-            //printf("%s\n", data);
-            jdobj = json_tokener_parse(data);
-            if(jdobj) {
-                found = json_object_object_get_ex(jdobj, "id", &val);
-                if(found) {
-                    sval = json_object_get_string(val);
-                    strncpy(uuid, sval, DUUID_MAX);
-                }
-                found = json_object_object_get_ex(jdobj, "name", &val);
-                if(found) {
-                    sval = json_object_get_string(val);
-                    strncpy(name, sval, DNAME_MAX);
-                }
-                found = json_object_object_get_ex(jdobj, "mimeType", &val);
-                if(found) {
-                    sval = json_object_get_string(val);
-                    strncpy(mime, sval, DMIME_MAX);
-                    if(0 == strcmp(mime,
-                            "application/vnd.google-apps.folder")) {
-                        isdir = 1;
-                    } else if(0 == strncmp(mime,
-                            "application/vnd.google-apps.", 20)) {
-                        exclude = 1;
+        tokener = json_tokener_new();
+        if(tokener) {
+            memset(fileurl, 0, (FILEURL_MAX + 1) * sizeof(char));
+            snprintf(fileurl, FILEURL_MAX,
+                    "https://www.googleapis.com/drive/v3/files/%s?"
+                    "fields=id,name,mimeType,size,"
+                    "modifiedTime,createdTime,version,md5Checksum,parents", alias);
+            printf("%s - %s\n", alias, fileurl);
+            rc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
+            pthread_mutex_lock(&auth_mutex);
+            rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, auth_chunk);
+            pthread_mutex_unlock(&auth_mutex);
+            rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, parse_json);
+            context.tokener = tokener;
+            context.pointer = &jroot;
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &context);
+            rc = curl_easy_perform(curl);
+            if(CURLE_OK == rc) {
+                if(jroot) {
+                    found = json_object_object_get_ex(jroot, "id", &jval);
+                    if(found) {
+                        sval = json_object_get_string(jval);
+                        strncpy(uuid, sval, DUUID_MAX);
                     }
-                }
-                found = json_object_object_get_ex(jdobj, "size", &val);
-                if(found) {
-                    size = json_object_get_int64(val);
-                }
-                found = json_object_object_get_ex(jdobj, "modifiedTime",
-                        &val);
-                if(found) {
-                    sval = json_object_get_string(val);
-                    strncpy(mtimes, sval, DTIME_MAX);
-                }
-                found = json_object_object_get_ex(jdobj, "createdTime",
-                        &val);
-                if(found) {
-                    sval = json_object_get_string(val);
-                    strncpy(ctimes, sval, DTIME_MAX);
-                }
-                found = json_object_object_get_ex(jdobj, "md5Checksum",
-                        &val);
-                if(found) {
-                    sval = json_object_get_string(val);
-                    strncpy(cksum, sval, DCKSUM_MAX);
-                }
-                found = json_object_object_get_ex(jdobj, "parents", &val);
-                if(found) {
-                    pn = json_object_array_length(val);
-                    if(pn > 0) {
-                        pitem = json_object_array_get_idx(val, 0);
-                        sval = json_object_get_string(pitem);
-                        strncpy(parent, sval, DUUID_MAX);
+                    found = json_object_object_get_ex(jroot, "name", &jval);
+                    if(found) {
+                        sval = json_object_get_string(jval);
+                        strncpy(name, sval, DNAME_MAX);
                     }
+                    found = json_object_object_get_ex(jroot, "mimeType", &jval);
+                    if(found) {
+                        sval = json_object_get_string(jval);
+                        strncpy(mime, sval, DMIME_MAX);
+                        if(0 == strcmp(mime,
+                                    "application/vnd.google-apps.folder")) {
+                            isdir = 1;
+                        } else if(0 == strncmp(mime,
+                                    "application/vnd.google-apps.", 20)) {
+                            exclude = 1;
+                        }
+                    }
+                    found = json_object_object_get_ex(jroot, "size", &jval);
+                    if(found) {
+                        size = json_object_get_int64(jval);
+                    }
+                    found = json_object_object_get_ex(jroot, "modifiedTime",
+                            &jval);
+                    if(found) {
+                        sval = json_object_get_string(jval);
+                        strncpy(mtimes, sval, DTIME_MAX);
+                    }
+                    found = json_object_object_get_ex(jroot, "createdTime",
+                            &jval);
+                    if(found) {
+                        sval = json_object_get_string(jval);
+                        strncpy(ctimes, sval, DTIME_MAX);
+                    }
+                    found = json_object_object_get_ex(jroot, "md5Checksum",
+                            &jval);
+                    if(found) {
+                        sval = json_object_get_string(jval);
+                        strncpy(cksum, sval, DCKSUM_MAX);
+                    }
+                    found = json_object_object_get_ex(jroot, "parents", &jval);
+                    if(found) {
+                        pn = json_object_array_length(jval);
+                        if(pn > 0) {
+                            pitem = json_object_array_get_idx(jval, 0);
+                            sval = json_object_get_string(pitem);
+                            strncpy(parent, sval, DUUID_MAX);
+                        }
+                    }
+
+                    /* insert/update entry */
+                    /*printf("id: %s\n", id);
+                      printf("name: %s\n", name);
+                      printf("isdir: %d\n", isdir);
+                      printf("size: %lld\n", (long long int)size);
+                      printf("mtime: %s\n", mtimes);
+                      printf("ctime: %s\n", ctimes);
+                      printf("version: %d\n", version);
+                      printf("cksum: %s\n", cksum);
+                      printf("parent: %s\n", parent);
+                      printf("\n");*/
                 }
-                
-                /* insert/update entry */
-                /*printf("id: %s\n", id);
-                printf("name: %s\n", name);
-                printf("isdir: %d\n", isdir);
-                printf("size: %lld\n", (long long int)size);
-                printf("mtime: %s\n", mtimes);
-                printf("ctime: %s\n", ctimes);
-                printf("version: %d\n", version);
-                printf("cksum: %s\n", cksum);
-                printf("parent: %s\n", parent);
-                printf("\n");*/
             }
+            json_tokener_free(tokener);
         }
         curl_easy_cleanup(curl);
     }
@@ -311,10 +327,10 @@ void recurse(const char *alias)
     if(isdir) {
 
         /* load all files */
-        tmp = tmpfile();
-        if(tmp) {
-            curl = curl_easy_init();
-            if(curl) {
+        curl = curl_easy_init();
+        if(curl) {
+            tokener = json_tokener_new();
+            if(tokener) {
                 memset(fileurl, 0, (FILEURL_MAX + 1) * sizeof(char));
                 snprintf(fileurl, FILEURL_MAX,
                         "https://www.googleapis.com/drive/v3/files?"
@@ -323,33 +339,42 @@ void recurse(const char *alias)
                 pthread_mutex_lock(&auth_mutex);
                 rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, auth_chunk);
                 pthread_mutex_unlock(&auth_mutex);
-                rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite);
-                rc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, tmp);
+                rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, parse_json);
+                context.tokener = tokener;
+                context.pointer = &jroot;
+                rc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &context);
                 rc = curl_easy_perform(curl);
-                curl_easy_cleanup(curl);
-            }
 
-            fflush(tmp);
+                if(jroot) {
+                    found = json_object_object_get_ex(jroot, "kind", &jval);
+                    /* drive#fileList */
 
-            /* no real need for a full json parser, just go for lines like:
-               "id": "2T65Ks-tHyNP_3bPdE4wgkHlKQIDqz586I", */
-            rewind(tmp);
-            memset(linebuf, 0, (LINEBUF_MAX + 1) * sizeof(char));
-            while((line = fgets(linebuf, LINEBUF_MAX, tmp))) {
-                if(!keep_running) {
-                    break;
+                    found = json_object_object_get_ex(jroot, "nextPageToken",
+                            &jval);
+                    /* save for next run */
+                    
+                    found = json_object_object_get_ex(jroot, "files", &jfiles);
+                    if(found) {
+                        nfiles = json_object_array_length(jfiles);
+                        for(i = 0; i < nfiles; i++) {
+                            jfile = json_object_array_get_idx(jfiles, i);
+                            if(jfile) {
+                                found = json_object_object_get_ex(jfile,
+                                        "id", &jval);
+                                if(found) {
+                                    sval = json_object_get_string(jval);
+                                    if(sval && strlen(sval)) {
+                                        recurse(sval);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-                if(strncmp(line, "   \"id\": \"", 10)) {
-                    continue;
-                }
-                line += 10;
-                end = strchr(line, '"');
-                if(end) {
-                    *end = 0;
-                    recurse(line);
-                }
+
+                json_tokener_free(tokener);
             }
-            fclose(tmp);
+            curl_easy_cleanup(curl);
         }
     }
     
@@ -444,23 +469,16 @@ static int get_tokens(const char *code)
     return authorize("authorization_code", "code", code);
 }
 
-struct _json_tp
-{
-    json_tokener *tokener;
-    json_object **pointer;
-};
-typedef struct _json_tp json_tp_t;
-
 size_t parse_json(void *ptr, size_t size, size_t n, void *stream)
 {
-    json_tp_t *tp;
+    json_context_t *context;
     json_tokener *tokener;
     json_object *pointer;
     size_t len;
     enum json_tokener_error err;
 
-    tp = (json_tp_t *)stream;
-    tokener = tp->tokener;
+    context = (json_context_t *)stream;
+    tokener = context->tokener;
     len = size * n;
     pointer = json_tokener_parse_ex(tokener, ptr, len);
     if(NULL == pointer) {
@@ -468,9 +486,9 @@ size_t parse_json(void *ptr, size_t size, size_t n, void *stream)
         if(err != json_tokener_continue) {
             len = 0;
         }
-    } else {
-        *tp->pointer = pointer;
     }
+    *context->pointer = pointer;
+
     return len;
 }
 
@@ -489,7 +507,7 @@ static int authorize(const char *grant_type, const char *key, const char *token)
 #define DATA_MAX    511
     char data[DATA_MAX + 1];
     char body[DATA_MAX + 1];
-    json_tp_t tp;
+    json_context_t context;
     json_tokener *tokener;
     json_object *jauth;
     json_object *val;
@@ -521,9 +539,9 @@ static int authorize(const char *grant_type, const char *key, const char *token)
             rc = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
             rc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, parse_json);
             memset(body, 0, (DATA_MAX + 1) * sizeof(char));
-            tp.tokener = tokener;
-            tp.pointer = &jauth;
-            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &tp);
+            context.tokener = tokener;
+            context.pointer = &jauth;
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &context);
             rc = curl_easy_perform(curl);
 
             if(jauth) {
@@ -565,55 +583,47 @@ static int get_start_token(char *changeid, size_t len)
     CURLcode cc;
     int rc;
     char fileurl[FILEURL_MAX + 1];
-    char body[DATA_MAX + 1];
+    json_context_t context;
+    json_tokener *tokener;
     json_object *jbody;
     json_object *jval;
     json_bool found;
     const char *sval;
 
-    size_t writecb(void *ptr, size_t size, size_t n, void *stream)
-    {
-        size_t len;
-
-        len = size * n;
-        if(len > DATA_MAX) {
-            len = DATA_MAX;
-        }
-        memcpy(stream, ptr, len);
-
-        return len;
-    }
-
     (void)rc;
-    memset(body, 0, (DATA_MAX + 1) * sizeof(char));
 
     curl = curl_easy_init();
     if(curl) {
-        memset(fileurl, 0, (FILEURL_MAX + 1) * sizeof(char));
-        snprintf(fileurl, FILEURL_MAX,
-                "https://www.googleapis.com/drive/v3/changes/startPageToken");
-        cc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
-        pthread_mutex_lock(&auth_mutex);
-        cc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, auth_chunk);
-        pthread_mutex_unlock(&auth_mutex);
-        cc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writecb);
-        cc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, body);
-        cc = curl_easy_perform(curl);
-        curl_easy_cleanup(curl);
-    }
+        tokener = json_tokener_new();
+        if(tokener) {
+            memset(fileurl, 0, (FILEURL_MAX + 1) * sizeof(char));
+            snprintf(fileurl, FILEURL_MAX,
+                    "https://www.googleapis.com/drive/v3/changes/startPageToken");
+            cc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
+            pthread_mutex_lock(&auth_mutex);
+            cc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, auth_chunk);
+            pthread_mutex_unlock(&auth_mutex);
+            cc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, parse_json);
+            context.tokener = tokener;
+            context.pointer = &jbody;
+            cc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &context);
+            cc = curl_easy_perform(curl);
 
-    jbody = json_tokener_parse(body);
-    if(jbody) {
-        found = json_object_object_get_ex(jbody, "kind", &jval);
-        if(found) {
-            sval = json_object_get_string(jval);
-            /* must match "drive#startPageToken" */
+            if(jbody) {
+                found = json_object_object_get_ex(jbody, "kind", &jval);
+                if(found) {
+                    sval = json_object_get_string(jval);
+                    /* must match "drive#startPageToken" */
+                }
+                found = json_object_object_get_ex(jbody, "startPageToken", &jval);
+                if(found) {
+                    sval = json_object_get_string(jval);
+                    strncpy(changeid, sval, len);
+                }
+            }
+            json_tokener_free(tokener);
         }
-        found = json_object_object_get_ex(jbody, "startPageToken", &jval);
-        if(found) {
-            sval = json_object_get_string(jval);
-            strncpy(changeid, sval, len);
-        }
+        curl_easy_cleanup(curl);
     }
     return 0;
 }
