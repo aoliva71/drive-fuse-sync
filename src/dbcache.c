@@ -1073,13 +1073,15 @@ int dbcache_rmref(int64_t id)
 int dbcache_change_load(char *changeid, size_t len)
 {
     int rc;
+    const char *cptr;
 
     rc = -1;
     if(changeid) {
         rc = sqlite3_reset(selchange);
         rc = sqlite3_step(selchange);
         if(SQLITE_ROW == rc) {
-            strncpy(changeid, sqlite3_column_text(selchange, 0), len);
+            cptr = (char *)sqlite3_column_text(selchange, 0);
+            strncpy(changeid, cptr, len);
             rc = 0;
         } else {
             *changeid = 0;

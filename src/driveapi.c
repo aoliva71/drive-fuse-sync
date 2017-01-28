@@ -148,25 +148,11 @@ int drive_download(const char *id, FILE *f)
     return 0;
 }
 
-size_t writecb(void *ptr, size_t size, size_t n, void *stream)
-{
-    size_t len;
-
-    len = size * n;
-    if(len > DATA_MAX) {
-        len = DATA_MAX;
-    }
-    memcpy(stream, ptr, len);
-
-    return len;
-}
-
 void recurse(const char *alias)
 {
     CURL *curl;
     CURLcode rc;
 
-    FILE *tmp;
 #define FILEURL_MAX     255
     char fileurl[FILEURL_MAX + 1];
     json_context_t context;
@@ -178,7 +164,6 @@ void recurse(const char *alias)
     json_bool found;
     const char *sval;
     int i, nfiles;
-    json_object *id;
 
 #define DUUID_MAX       63
     char uuid[DUUID_MAX + 1];
@@ -199,14 +184,6 @@ void recurse(const char *alias)
     int pn;
     struct json_object *pitem;
     char parent[DUUID_MAX + 1];
-
-#define DATA_MAX    511
-    char data[DATA_MAX + 1];
-
-#define LINEBUF_MAX    255
-    char linebuf[LINEBUF_MAX + 1];
-    char *line;
-    char *end;
 
     memset(uuid, 0, (DUUID_MAX + 1) * sizeof(char));
     memset(name, 0, (DNAME_MAX + 1) * sizeof(char));
@@ -233,7 +210,8 @@ void recurse(const char *alias)
             snprintf(fileurl, FILEURL_MAX,
                     "https://www.googleapis.com/drive/v3/files/%s?"
                     "fields=id,name,mimeType,size,"
-                    "modifiedTime,createdTime,version,md5Checksum,parents", alias);
+                    "modifiedTime,createdTime,version,md5Checksum,parents",
+                    alias);
             printf("%s - %s\n", alias, fileurl);
             rc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
             pthread_mutex_lock(&auth_mutex);
@@ -598,7 +576,8 @@ static int get_start_token(char *changeid, size_t len)
         if(tokener) {
             memset(fileurl, 0, (FILEURL_MAX + 1) * sizeof(char));
             snprintf(fileurl, FILEURL_MAX,
-                    "https://www.googleapis.com/drive/v3/changes/startPageToken");
+                    "https://www.googleapis.com/drive/v3/changes/"
+                    "startPageToken");
             cc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
             pthread_mutex_lock(&auth_mutex);
             cc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, auth_chunk);
@@ -615,7 +594,8 @@ static int get_start_token(char *changeid, size_t len)
                     sval = json_object_get_string(jval);
                     /* must match "drive#startPageToken" */
                 }
-                found = json_object_object_get_ex(jbody, "startPageToken", &jval);
+                found = json_object_object_get_ex(jbody, "startPageToken",
+                        &jval);
                 if(found) {
                     sval = json_object_get_string(jval);
                     strncpy(changeid, sval, len);
