@@ -2,3 +2,4 @@ autom4te.cache
 m4
 *.o
 tags
+*~
