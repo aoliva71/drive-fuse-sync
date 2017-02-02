@@ -17,7 +17,6 @@
 #include "driveapi.h"
 #include "fscache.h"
 #include "fuseapi.h"
-#include "inotifyapi.h"
 
 struct _conf
 {
