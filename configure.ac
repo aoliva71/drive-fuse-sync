@@ -18,6 +18,9 @@ PKG_CHECK_MODULES(CURL,[libcurl])
 PKG_CHECK_MODULES(JSONC,[json-c])
 PKG_CHECK_MODULES(SQLITE3,[sqlite3])
 
+AC_CHECK_HEADER([log4c.h])
+AC_CHECK_LIB([log4c],[log4c_init])
+
 # Checks for header files.
 AC_CHECK_HEADERS([stdlib.h string.h unistd.h])
 

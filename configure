@@ -4320,7 +4320,6 @@ $as_echo "yes" >&6; }
 
 fi
 
-# Checks for header files.
 
 ac_ext=c
 ac_cpp='$CPP $CPPFLAGS'
@@ -4719,6 +4718,59 @@ fi
 done
 
 
+ac_fn_c_check_header_mongrel "$LINENO" "log4c.h" "ac_cv_header_log4c_h" "$ac_includes_default"
+if test "x$ac_cv_header_log4c_h" = xyes; then :
+
+fi
+
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for log4c_init in -llog4c" >&5
+$as_echo_n "checking for log4c_init in -llog4c... " >&6; }
+if ${ac_cv_lib_log4c_log4c_init+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-llog4c  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char log4c_init ();
+int
+main ()
+{
+return log4c_init ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_log4c_log4c_init=yes
+else
+  ac_cv_lib_log4c_log4c_init=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_log4c_log4c_init" >&5
+$as_echo "$ac_cv_lib_log4c_log4c_init" >&6; }
+if test "x$ac_cv_lib_log4c_log4c_init" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_LIBLOG4C 1
+_ACEOF
+
+  LIBS="-llog4c $LIBS"
+
+fi
+
+
+# Checks for header files.
 for ac_header in stdlib.h string.h unistd.h
 do :
   as_ac_Header=`$as_echo "ac_cv_header_$ac_header" | $as_tr_sh`
