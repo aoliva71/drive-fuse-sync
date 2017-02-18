@@ -6,8 +6,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-int fscache_start(const char *);
-int fscache_stop(void);
+int fscache_setup(const char *);
+int fscache_cleanup(void);
 
 int fscache_create(const char *);
 int fscache_open(const char *, int);

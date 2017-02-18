@@ -18,7 +18,8 @@
 #include <stdarg.h>
 #define LOG(...) printf(__VA_ARGS__); printf("\n")
 
-#define BLOCKSIZE     4096
+#define SECTSIZE    512L
+#define BLOCKSIZE   4096L
 
 static uid_t uid = 0;
 static gid_t gid = 0;
@@ -58,7 +59,8 @@ static int fuseapi_getattr(const char *path, struct stat *st)
             break;
         }
         st->st_blksize = BLOCKSIZE;
-        st->st_blocks = st->st_size / 512L + (st->st_size % 512L ? 1L : 0L);
+        st->st_blocks = st->st_size / SECTSIZE +
+                (st->st_size % SECTSIZE ? 1L : 0L);
         if(0 == st->st_size) {
             st->st_blocks++;
         }
@@ -290,7 +292,8 @@ static int fuseapi_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             break;
         }
         st.st_blksize = BLOCKSIZE;
-        st.st_blocks = st.st_size / 512L + (st.st_size % 512L ? 1L : 0L);
+        st.st_blocks = st.st_size / SECTSIZE +
+                (st.st_size % SECTSIZE ? 1L : 0L);
         if(0 == st.st_size) {
             st.st_blocks++;
         }

@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <syslog.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -12,6 +11,8 @@
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
+
+#include <log4c.h>
 
 #include "dbcache.h"
 #include "driveapi.h"
@@ -26,6 +27,7 @@ struct _conf
     char basedir[PATH_MAX + 1];
     char cachedir[PATH_MAX + 1];
     char mountpoint[PATH_MAX + 1];
+    char logdir[PATH_MAX + 1];
 
 #define USER_MAX    63
     char user[USER_MAX + 1];
@@ -41,6 +43,8 @@ static void write_pid(const char *);
 int main(int argc, char *argv[])
 {
     conf_t conf;
+    log4c_appender_t *appender;
+    log4c_category_t *mainlog;
     
     set_defaults(&conf);
     parse_command_line(&conf, argc, argv);
@@ -59,13 +63,22 @@ int main(int argc, char *argv[])
     mkdir(conf.basedir, (mode_t)0700);
     mkdir(conf.cachedir, (mode_t)0700);
     mkdir(conf.mountpoint, (mode_t)0700);
-    openlog(PACKAGE_NAME, LOG_CONS|LOG_PID, LOG_DAEMON);
+    mkdir(conf.logdir, (mode_t)0700);
 
+    log4c_init();
+
+    appender = log4c_appender_new("rolling");
+    log4c_appender_settype(appender, log4c_appender_type_rollingfile);
+
+    mainlog = log4c_category_get("main");
+    log4c_category_set_appender(mainlog, appender);
+
+    log4c_category_debug(mainlog, "writing pidfile %s", conf.pidfile);
     write_pid(conf.pidfile);
 
-    syslog(LOG_INFO, "starting");
-
-    fscache_start(conf.cachedir);
+    log4c_category_info(mainlog, "setting up filesystem cache %s",
+            conf.cachedir);
+    fscache_setup(conf.cachedir);
 
     dbcache_open(conf.dbfile);
     if(!conf.setup) {
@@ -80,10 +93,9 @@ int main(int argc, char *argv[])
 
     dbcache_close();
 
-    fscache_stop();
+    fscache_cleanup();
 
-    syslog(LOG_INFO, "stopping");
-    closelog();
+    log4c_fini();
 
     return 0;
 }
@@ -96,19 +108,21 @@ static void set_defaults(conf_t *conf)
     if(home) {
         snprintf(conf->basedir, PATH_MAX, "%s/.drivefusesync", home);
         snprintf(conf->mountpoint, PATH_MAX, "%s/drive", home);
+        snprintf(conf->logdir, PATH_MAX, "%s/log", home);
     }
 }
 
 static void parse_command_line(conf_t *conf, int argc, char *argv[])
 {
     int o;
-#define OPTS    "sdu:b:m:h"
+#define OPTS    "sdu:b:m:l:h"
     static struct option lopts[] = {
         {"setup", 0, NULL, 's'},
         {"daemonize", 0, NULL, 'd'},
         {"user-name", 1, NULL, 'u'},
         {"base-dir", 1, NULL, 'b'},
         {"mount-point", 1, NULL, 'm'},
+        {"log-dir", 1, NULL, 'l'},
         {"help", 0, NULL, 'h'},
         {0, 0, 0, 0}
     };
@@ -140,12 +154,18 @@ static void parse_command_line(conf_t *conf, int argc, char *argv[])
                 strncpy(conf->mountpoint, optarg, PATH_MAX);
             }
             break;
+        case 'l':
+            if(optarg) {
+                strncpy(conf->logdir, optarg, PATH_MAX);
+            }
+            break;
         case 'h':
             printf("usage: %s "
                 "[-s|--setup] "
                 "[-d|--daemonize] "
                 "[-b|--base-dir <BASEDIR>] "
                 "[-m|--mount-point <MOUNTPOINT>] "
+                "[-l|--log-dir <LOGDIR>] "
                 "-u|--user <USERNAME> "
                 " | "
                 "-h|--help\n"

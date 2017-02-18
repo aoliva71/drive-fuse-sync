@@ -17,21 +17,18 @@
 #include <stdarg.h>
 #define LOG(...) printf(__VA_ARGS__); printf("\n")
 
-static pthread_t fscache_thread;
 static void *fscache_run(void *);
 static char fscachedir[PATH_MAX + 1];
 
-int fscache_start(const char *cachedir)
+int fscache_setup(const char *cachedir)
 {
     memset(fscachedir, 0, (PATH_MAX + 1) * sizeof(char));
     strncpy(fscachedir, cachedir, PATH_MAX);
-    pthread_create(&fscache_thread, NULL, fscache_run, NULL);
     return 0;
 }
 
-int fscache_stop(void)
+int fscache_cleanup(void)
 {
-    pthread_join(fscache_thread, NULL);
     return 0;
 }
 
@@ -152,12 +149,5 @@ FILE *fscache_fopen(const char *uuid)
 void fscache_fclose(FILE *f)
 {
     fclose(f);
-}
-
-
-static void *fscache_run(void *opaque)
-{
-    (void)opaque;
-    return NULL;
 }
 
