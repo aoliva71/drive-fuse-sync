@@ -17,7 +17,6 @@
 #include <stdarg.h>
 #define LOG(...) printf(__VA_ARGS__); printf("\n")
 
-static void *fscache_run(void *);
 static char fscachedir[PATH_MAX + 1];
 
 int fscache_setup(const char *cachedir)

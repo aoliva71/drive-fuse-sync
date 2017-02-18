@@ -13,6 +13,7 @@
 #endif
 
 #include <log4c.h>
+#include <log4c/appender_type_rollingfile.h>
 
 #include "dbcache.h"
 #include "driveapi.h"
@@ -43,6 +44,7 @@ static void write_pid(const char *);
 int main(int argc, char *argv[])
 {
     conf_t conf;
+    log4c_layout_t *layout;
     log4c_appender_t *appender;
     log4c_category_t *mainlog;
     
@@ -67,11 +69,13 @@ int main(int argc, char *argv[])
 
     log4c_init();
 
-    appender = log4c_appender_new("rolling");
-    log4c_appender_settype(appender, log4c_appender_type_rollingfile);
-
     mainlog = log4c_category_get("main");
+    appender = log4c_appender_get("file");
+    layout = log4c_layout_get("dated");
+    log4c_appender_set_type(appender, &log4c_appender_type_rollingfile);
+    log4c_appender_set_layout(appender, layout);
     log4c_category_set_appender(mainlog, appender);
+    log4c_category_set_priority(mainlog, LOG4C_PRIORITY_DEBUG);
 
     log4c_category_debug(mainlog, "writing pidfile %s", conf.pidfile);
     write_pid(conf.pidfile);
@@ -95,6 +99,8 @@ int main(int argc, char *argv[])
 
     fscache_cleanup();
 
+    log4c_appender_close(appender);
+    log4c_appender_delete(appender);
     log4c_fini();
 
     return 0;
@@ -108,7 +114,6 @@ static void set_defaults(conf_t *conf)
     if(home) {
         snprintf(conf->basedir, PATH_MAX, "%s/.drivefusesync", home);
         snprintf(conf->mountpoint, PATH_MAX, "%s/drive", home);
-        snprintf(conf->logdir, PATH_MAX, "%s/log", home);
     }
 }
 
@@ -182,6 +187,7 @@ static void parse_command_line(conf_t *conf, int argc, char *argv[])
         exit(1);
     }
     snprintf(conf->cachedir, PATH_MAX, "%s/%s.cache", conf->basedir, conf->user);
+    snprintf(conf->logdir, PATH_MAX, "%s/%s.log", conf->basedir, conf->user);
     snprintf(conf->pidfile, PATH_MAX, "%s/%s.pid", conf->basedir, conf->user);
     snprintf(conf->dbfile, PATH_MAX, "%s/%s.db", conf->basedir, conf->user);
 }
