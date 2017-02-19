@@ -91,7 +91,8 @@ CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
 am_drivefusesync_OBJECTS = main.$(OBJEXT) driveapi.$(OBJEXT) \
-	dbcache.$(OBJEXT) fscache.$(OBJEXT) fuseapi.$(OBJEXT)
+	dbcache.$(OBJEXT) fscache.$(OBJEXT) fuseapi.$(OBJEXT) \
+	log.$(OBJEXT)
 drivefusesync_OBJECTS = $(am_drivefusesync_OBJECTS)
 am__DEPENDENCIES_1 =
 drivefusesync_DEPENDENCIES = $(am__DEPENDENCIES_1) \
@@ -251,7 +252,7 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AM_CFLAGS = -I$(top_srcdir)/include ${FUSE_CFLAGS} ${CURL_CFLAGS} ${JSONC_CFLAGS} ${SQLITE3_CFLAGS}
-drivefusesync_SOURCES = main.c driveapi.c dbcache.c fscache.c fuseapi.c
+drivefusesync_SOURCES = main.c driveapi.c dbcache.c fscache.c fuseapi.c log.c
 drivefusesync_LDADD = ${FUSE_LIBS} ${CURL_LIBS} ${JSONC_LIBS} ${SQLITE3_LIBS}
 all: all-am
 
@@ -344,6 +345,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/driveapi.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fscache.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fuseapi.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/main.Po@am__quote@
 
 .c.o:

@@ -8,17 +8,11 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
-
-#include <log4c.h>
-#include <log4c/appender_type_rollingfile.h>
-
 #include "dbcache.h"
 #include "driveapi.h"
 #include "fscache.h"
 #include "fuseapi.h"
+#include "log.h"
 
 struct _conf
 {
@@ -44,9 +38,6 @@ static void write_pid(const char *);
 int main(int argc, char *argv[])
 {
     conf_t conf;
-    log4c_layout_t *layout;
-    log4c_appender_t *appender;
-    log4c_category_t *mainlog;
     
     set_defaults(&conf);
     parse_command_line(&conf, argc, argv);
@@ -67,21 +58,12 @@ int main(int argc, char *argv[])
     mkdir(conf.mountpoint, (mode_t)0700);
     mkdir(conf.logdir, (mode_t)0700);
 
-    log4c_init();
+    log_init(conf.logdir);
 
-    mainlog = log4c_category_get("main");
-    appender = log4c_appender_get("file");
-    layout = log4c_layout_get("dated");
-    log4c_appender_set_type(appender, &log4c_appender_type_rollingfile);
-    log4c_appender_set_layout(appender, layout);
-    log4c_category_set_appender(mainlog, appender);
-    log4c_category_set_priority(mainlog, LOG4C_PRIORITY_DEBUG);
-
-    log4c_category_debug(mainlog, "writing pidfile %s", conf.pidfile);
+    log_debug("writing pidfile %s", conf.pidfile);
     write_pid(conf.pidfile);
 
-    log4c_category_info(mainlog, "setting up filesystem cache %s",
-            conf.cachedir);
+    log_info("setting up filesystem cache %s", conf.cachedir);
     fscache_setup(conf.cachedir);
 
     dbcache_open(conf.dbfile);
@@ -99,9 +81,7 @@ int main(int argc, char *argv[])
 
     fscache_cleanup();
 
-    log4c_appender_close(appender);
-    log4c_appender_delete(appender);
-    log4c_fini();
+    log_term();
 
     return 0;
 }
