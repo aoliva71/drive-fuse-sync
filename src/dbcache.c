@@ -8,13 +8,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <syslog.h>
 
-#ifdef HAVE_CONFIG
+#ifdef HAVE_CONFIG_H
 #include "config.h"
 #else
 #define VERSION "0.0"
 #endif
+
+#include "log.h"
 
 static sqlite3 *sql = NULL;
 
@@ -47,9 +48,6 @@ static void r2ts(struct timespec *, double);
 
 static pthread_mutex_t dbcache_mutex;
 
-#include <stdarg.h>
-#define LOG(...) printf(__VA_ARGS__); printf("\n")
-
 int dbcache_open(const char *path)
 {
     int rc;
@@ -58,7 +56,7 @@ int dbcache_open(const char *path)
 
     rc = sqlite3_open(path, &sql);
     if(rc != SQLITE_OK) {
-        syslog(LOG_ERR, "unable to open db file %s", path);
+        log_error("unable to open db file %s", path);
         exit(1);
     }
 
@@ -96,11 +94,11 @@ int dbcache_setup_schema(void)
     } else if(SQLITE_ROW == rc) {
         vfound = sqlite3_column_int(sel, 0);
         if(vfound != schemaversion) {
-            syslog(LOG_ERR, "version mismatch");
+            log_error("version mismatch");
             exit(1);
         }
     } else {
-        syslog(LOG_ERR, "unable to read version");
+        log_error("unable to read version");
         exit(1);
     }
     sqlite3_finalize(sel);

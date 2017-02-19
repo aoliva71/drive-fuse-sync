@@ -13,9 +13,7 @@
 
 #include "dbcache.h"
 #include "driveapi.h"
-
-#include <stdarg.h>
-#define LOG(...) printf(__VA_ARGS__); printf("\n")
+#include "log.h"
 
 static char fscachedir[PATH_MAX + 1];
 
@@ -48,7 +46,7 @@ int fscache_open(const char *uuid, int flags)
     memset(path, 0, (PATH_MAX + 1) * sizeof(char));
     snprintf(path, PATH_MAX, "%s/%s", fscachedir, uuid);
 
-    LOG("opening: %s", path);
+    log_debug("opening: %s", path);
     return open(path, flags);
 }
 
@@ -72,7 +70,7 @@ int fscache_read(int fd, char *buf, off_t off, size_t len)
 
     noff = lseek(fd, off, SEEK_SET);
     if(noff != off) {
-        LOG("unable to seek");
+        log_debug("unable to seek");
         return -1;
     }
 

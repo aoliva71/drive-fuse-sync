@@ -14,9 +14,7 @@
 #include "dbcache.h"
 #include "fscache.h"
 #include "driveapi.h"
-
-#include <stdarg.h>
-#define LOG(...) printf(__VA_ARGS__); printf("\n")
+#include "log.h"
 
 #define SECTSIZE    512L
 #define BLOCKSIZE   4096L
@@ -26,7 +24,7 @@ static gid_t gid = 0;
 
 static int fuseapi_getattr(const char *path, struct stat *st)
 {
-    LOG("fuseapi_getattr: %s", path);
+    log_debug("fuseapi_getattr: %s", path);
 
     memset(st, 0, sizeof(struct stat));
     int cb(int64_t id, const char *uuid, const char *name, int type,
@@ -76,7 +74,7 @@ static int fuseapi_getattr(const char *path, struct stat *st)
 
 static int fuseapi_mkdir(const char *path, mode_t mode)
 {
-    LOG("fuseapi_mkdir: %s", path);
+    log_debug("fuseapi_mkdir: %s", path);
 
     int cb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, const struct timespec *atime,
@@ -102,7 +100,7 @@ static int fuseapi_mkdir(const char *path, mode_t mode)
 
 /*static void fuseapi_unlink(const char *path)
 {
-    LOG("fuseapi_unlink: %s", path);
+    log_debug("fuseapi_unlink: %s", path);
 
     int cb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, const struct timespec *atime,
@@ -127,7 +125,7 @@ static int fuseapi_mkdir(const char *path, mode_t mode)
 
 static int fuseapi_rmdir(const char *path)
 {
-    LOG("fuseapi_rmdir: %s", path);
+    log_debug("fuseapi_rmdir: %s", path);
     int cb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
@@ -150,7 +148,7 @@ static int fuseapi_rmdir(const char *path)
 
 /*static int fuseapi_rename(const char *oldpath, const char *path)
 {
-    LOG("fuseapi_rename: %s -> %s", oldpath, path);
+    log_debug("fuseapi_rename: %s -> %s", oldpath, path);
     int cb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, const struct timespec *atime,
             const struct timespec *mtime, const struct timespec *ctime,
@@ -180,7 +178,7 @@ static int fuseapi_open(const char *path,
 {
     int rc;
 
-    LOG("fuseapi_open: %s", path);
+    log_debug("fuseapi_open: %s", path);
 
     int cb(int64_t id, const char *uuid, const char *name, int type,
             size_t size, mode_t mode, const struct timespec *atime,
@@ -224,7 +222,7 @@ static int fuseapi_open(const char *path,
 static int fuseapi_read(const char *path, char *buf, size_t size,
         off_t off, struct fuse_file_info *fi)
 {
-    LOG("fuseapi_read: %s", path);
+    log_debug("fuseapi_read: %s", path);
     
     return fscache_read(fi->fh, buf, off, size);
 }
@@ -232,7 +230,7 @@ static int fuseapi_read(const char *path, char *buf, size_t size,
 /*static int fuseapi_write(const char *path, const char *buf,
                size_t size, off_t off, struct fuse_file_info *fi)
 {
-    LOG("fuseapi_write: %s", path);
+    log_debug("fuseapi_write: %s", path);
 
     return fscache_write(fi->fh, buf, off, size);
 }*/
@@ -242,7 +240,7 @@ static int fuseapi_release(const char *path,
 {
     size_t size;
 
-    LOG("fuseapi_release: %s", path);
+    log_debug("fuseapi_release: %s", path);
 
     if(fi->flags & O_ACCMODE) {
         fscache_size(fi->fh, &size);
@@ -256,7 +254,7 @@ static int fuseapi_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                  off_t off, struct fuse_file_info *fi)
 {
     struct stat st;
-    LOG("fuseapi_readdir: %s", path);
+    log_debug("fuseapi_readdir: %s", path);
     (void)off;
     (void)fi;
 
@@ -319,7 +317,7 @@ static int fuseapi_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     int fd;
     struct timespec tv;
 
-    LOG("fuseapi_create: %%s", path);
+    log_debug("fuseapi_create: %%s", path);
 
     rc = dbcache_createfile(path, mode);
     if(rc != 0) {
@@ -342,7 +340,7 @@ static void fuseapi_flush(const char *path,
     (void)ino;
     (void)fi;
 
-    LOG("fuseapi_flush: %lld", (long long int)ino);
+    log_debug("fuseapi_flush: %lld", (long long int)ino);
     // nothing to be done
     fuse_reply_buf(req, NULL, 0);
 }*/
@@ -392,7 +390,5 @@ int fuseapi_run(const char *mountpoint)
 
     return 0;
 }
-
-#undef LOG
 
 

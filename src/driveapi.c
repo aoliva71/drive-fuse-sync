@@ -13,6 +13,7 @@
 #include <json.h>
 
 #include "dbcache.h"
+#include "log.h"
 
 #define TOKENTYPE_MAX   31
 static char token_type[TOKENTYPE_MAX + 1];
@@ -212,7 +213,7 @@ void recurse(const char *alias)
                     "fields=id,name,mimeType,size,"
                     "modifiedTime,createdTime,version,md5Checksum,parents",
                     alias);
-            printf("%s - %s\n", alias, fileurl);
+            log_debug("%s - %s\n", alias, fileurl);
             rc = curl_easy_setopt(curl, CURLOPT_URL, fileurl);
             pthread_mutex_lock(&auth_mutex);
             rc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, auth_chunk);
